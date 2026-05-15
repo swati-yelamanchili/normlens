@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+.next/
+out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+data/uploads/
+*.pdf
+*.docx
+*.zip
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# ML Models
+*.bin
+*.pt
+*.pth
+*.onnx
+
+# Logs
+*.log
+logs/
+
+# Docker
+.docker/
