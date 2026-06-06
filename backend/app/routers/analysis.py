@@ -52,7 +52,7 @@ def _get_classifier():
 def _get_extractor():
     global _extractor
     if _extractor is None:
-        _extractor = AttributeExtractor()
+        _extractor = AttributeExtractor(_get_embedding_service())
     return _extractor
 
 def _get_segmenter():
@@ -229,7 +229,7 @@ def analyze_contract(
                 db.commit()
 
         missing_findings = _get_risk_engine().evaluate_missing_clauses(
-            classified_clauses, list(clause_types_found)
+            classified_clauses, list(clause_types_found), full_text=contract.text_content or ""
         )
         all_findings.extend(missing_findings)
 

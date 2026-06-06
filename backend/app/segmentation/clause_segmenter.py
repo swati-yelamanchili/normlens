@@ -5,7 +5,9 @@ from typing import List
 logger = logging.getLogger(__name__)
 
 CLAUSE_HEADER_PATTERNS = [
+    r"^\d+\.\s+([A-Z][A-Za-z\s\-/]+)[.](?:\s|$)",
     r"^\d+\.\s+([A-Z][A-Za-z\s\-/]+)$",
+    r"^\d+\.\d+\s+([A-Z][A-Za-z\s\-/]+)[.](?:\s|$)",
     r"^\d+\.\d+\s+([A-Z][A-Za-z\s\-/]+)$",
     r"^Section\s+\d+[\.\d]*\s*[–\-—]\s*([A-Z][A-Za-z\s\-/]+)$",
     r"^Section\s+\d+[\.\d]*[:.]?\s*([A-Z][A-Za-z\s\-/]+)$",
