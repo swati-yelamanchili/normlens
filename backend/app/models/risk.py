@@ -30,7 +30,7 @@ class RiskFinding(Base):
         UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="CASCADE"), nullable=False
     )
     clause_id = Column(
-        UUID(as_uuid=True), ForeignKey("clauses.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True), ForeignKey("clauses.id", ondelete="SET NULL"), nullable=True
     )
     rule_id = Column(UUID(as_uuid=True), ForeignKey("risk_rules.id"), nullable=True)
     risk_name = Column(String(256), nullable=False)

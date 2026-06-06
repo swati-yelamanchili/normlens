@@ -1,21 +1,70 @@
 import logging
+import hashlib
+import re
 from typing import List, Optional
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 
+class HashingEmbeddingModel:
+    """Small deterministic embedding fallback for local development and tests."""
+
+    def __init__(self, dimension: int):
+        self.dimension = dimension
+
+    def get_sentence_embedding_dimension(self) -> int:
+        return self.dimension
+
+    def encode(self, texts: List[str], show_progress_bar: bool = False) -> np.ndarray:
+        return np.array([self._encode_one(text) for text in texts], dtype=np.float32)
+
+    def _encode_one(self, text: str) -> np.ndarray:
+        vector = np.zeros(self.dimension, dtype=np.float32)
+        tokens = re.findall(r"[a-z0-9]+", text.lower())
+
+        for token in tokens:
+            digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
+            bucket = int.from_bytes(digest[:4], "little") % self.dimension
+            sign = 1.0 if digest[4] % 2 else -1.0
+            vector[bucket] += sign
+
+        norm = np.linalg.norm(vector)
+        if norm:
+            vector /= norm
+        return vector
+
+
 class EmbeddingService:
     def __init__(self, model_name: Optional[str] = None):
         self.model_name = model_name or settings.embedding_model
-        logger.info(f"Loading embedding model: {self.model_name}")
-        self.model = SentenceTransformer(self.model_name)
+        self.model = self._load_model()
         self.dimension = self.model.get_sentence_embedding_dimension()
-        logger.info(f"Embedding dimension: {self.dimension}")
+        logger.info("Embedding backend ready: %s (%s dimensions)", self.model_name, self.dimension)
+
+    def _load_model(self):
+        if settings.embedding_backend == "hashing":
+            self.model_name = "hashing"
+            return HashingEmbeddingModel(settings.embedding_dim)
+
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError:
+            if settings.embedding_backend == "sentence-transformers":
+                raise
+            logger.warning(
+                "sentence-transformers is not installed; using deterministic hashing embeddings. "
+                "Install backend/requirements-ml.txt and set EMBEDDING_BACKEND=sentence-transformers "
+                "for semantic embeddings."
+            )
+            self.model_name = "hashing"
+            return HashingEmbeddingModel(settings.embedding_dim)
+
+        logger.info("Loading sentence-transformers model: %s", self.model_name)
+        return SentenceTransformer(self.model_name)
 
     def encode(self, texts: List[str]) -> np.ndarray:
         if not texts:

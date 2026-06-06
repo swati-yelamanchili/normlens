@@ -13,9 +13,18 @@ from app.search import SearchService
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 
-embedding_service = EmbeddingService()
-classifier = ClauseClassifier(embedding_service)
-search_service = SearchService(embedding_service, classifier)
+_embedding_service = None
+_classifier = None
+_search_service = None
+
+
+def _get_search_service():
+    global _embedding_service, _classifier, _search_service
+    if _search_service is None:
+        _embedding_service = EmbeddingService()
+        _classifier = ClauseClassifier(_embedding_service)
+        _search_service = SearchService(_embedding_service, _classifier)
+    return _search_service
 
 
 @router.get("/")
@@ -50,7 +59,7 @@ def search_clauses(
         for c in clause_models
     ]
 
-    results = search_service.search(q, clauses, top_k=top_k)
+    results = _get_search_service().search(q, clauses, top_k=top_k)
 
     return {
         "query": q,

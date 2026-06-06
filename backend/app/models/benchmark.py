@@ -15,7 +15,7 @@ class BenchmarkResult(Base):
         UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="CASCADE"), nullable=False
     )
     clause_id = Column(
-        UUID(as_uuid=True), ForeignKey("clauses.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True), ForeignKey("clauses.id", ondelete="SET NULL"), nullable=True
     )
     clause_type = Column(String(128), nullable=False)
     attribute = Column(String(128), nullable=False)

@@ -35,8 +35,12 @@ export default function Home() {
     setUploading(true)
     setError(null)
     try {
-      await api.uploadContract(file)
+      const uploaded = await api.uploadContract(file)
       await loadContracts()
+      if (uploaded?.id) {
+        setSelectedContract(uploaded.id)
+        handleAnalyze(uploaded.id)
+      }
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -50,7 +54,7 @@ export default function Home() {
     try {
       await api.analyzeContract(id)
       const status = await api.getAnalysisStatus(id)
-      if (status.status === 'analyzed' || status.status === 'completed') {
+      if (status.status === 'analyzed') {
         const r = await api.getReport(id)
         setReport(r)
         setSelectedContract(id)
@@ -174,7 +178,7 @@ export default function Home() {
                       onClick={() => {
                         setSelectedContract(c.id)
                         if (c.status === 'analyzed') {
-                          api.getReport(c.id).then(setReport).catch(() => {})
+                          api.getReport(c.id).then(setReport).catch((e) => setError(e.message))
                         }
                       }}
                     >
@@ -189,7 +193,7 @@ export default function Home() {
                           </div>
                         </div>
                         <div className="flex items-center gap-1 ml-2">
-                          {c.status === 'parsed' || c.status === 'segmented' || c.status === 'classified' || (c.status && !['analyzed', 'pending', 'failed', 'analyzing'].includes(c.status)) ? (
+                          {c.status && !['analyzed', 'analyzing'].includes(c.status) ? (
                             <button
                               onClick={(e) => { e.stopPropagation(); handleAnalyze(c.id) }}
                               disabled={analyzing === c.id}
@@ -295,8 +299,9 @@ export default function Home() {
 }
 
 function ReportView({ report, getSeverityColor }: { report: any; getSeverityColor: (s: string) => string }) {
-  const data = report.report_data
-  const risk = data.risk_summary
+  const data = report.report_data || {}
+  const risk = data.risk_summary || {}
+  const summary = data.contract_summary || {}
 
   const riskColorMap: Record<string, string> = {
     Low: 'text-risk-low',
@@ -318,7 +323,7 @@ function ReportView({ report, getSeverityColor }: { report: any; getSeverityColo
         <div className="flex items-start justify-between mb-6">
           <div>
             <h2 className="text-xl font-bold text-gray-900">Risk Analysis Report</h2>
-            <p className="text-sm text-gray-500 mt-1">{data.contract_summary.filename}</p>
+            <p className="text-sm text-gray-500 mt-1">{summary.filename}</p>
           </div>
           <div className={`text-right ${riskColorMap[risk.risk_level] || 'text-gray-600'}`}>
             <div className="text-4xl font-bold">{risk.total_score}</div>
@@ -328,10 +333,10 @@ function ReportView({ report, getSeverityColor }: { report: any; getSeverityColo
 
         <div className="grid grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Clauses', value: data.contract_summary.clause_count },
+            { label: 'Clauses', value: summary.clause_count },
             { label: 'Findings', value: risk.finding_count },
             { label: 'Outliers', value: risk.outlier_count },
-            { label: 'Pages', value: data.contract_summary.page_count },
+            { label: 'Pages', value: summary.page_count },
           ].map(({ label, value }) => (
             <div key={label} className="p-3 bg-gray-50 rounded-lg text-center">
               <div className="text-2xl font-bold text-gray-900">{value}</div>

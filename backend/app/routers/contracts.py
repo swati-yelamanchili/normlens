@@ -4,6 +4,7 @@ import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -45,7 +46,7 @@ async def upload_contract(
         original_filename=file.filename or "unknown",
         file_type=file_type,
         file_size_bytes=str(len(file_bytes)),
-        status=ContractStatus.PARSING,
+        status=ContractStatus.PENDING,
     )
 
     db.add(contract)
@@ -107,6 +108,25 @@ def get_contract(
     }
 
 
+@router.get("/{contract_id}/download")
+def download_contract(
+    contract_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    contract = db.query(Contract).filter(Contract.id == contract_id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+    file_path = os.path.join(settings.upload_dir, contract.filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Contract file not found on disk")
+    media_type = "application/pdf" if contract.file_type == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        filename=contract.original_filename,
+    )
+
+
 @router.delete("/{contract_id}")
 def delete_contract(
     contract_id: uuid.UUID,
@@ -115,6 +135,9 @@ def delete_contract(
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
         raise HTTPException(status_code=404, detail="Contract not found")
+    file_path = os.path.join(settings.upload_dir, contract.filename)
+    if os.path.exists(file_path):
+        os.remove(file_path)
     db.delete(contract)
     db.commit()
     return {"message": "Contract deleted"}

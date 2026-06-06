@@ -36,14 +36,31 @@ class RiskRuleSet:
         return None
 
     def _generate_explanation(self, attributes: dict, result: dict) -> str:
-        return self.explanation_template.format(
-            **attributes,
-            **result,
-            extracted_value=result.get("extracted_value", "N/A"),
-        )
+        values = {**attributes, **result}
+        values.setdefault("extracted_value", "N/A")
+        return self.explanation_template.format(**values)
+
+
+ALLOWED_CLAUSE_TYPES = {
+    "excessive_notice": {"Termination", "Term"},
+    "unlimited_liability": {"Liability", "Indemnification", "Indemnity"},
+    "one_sided_termination": {"Termination"},
+    "excessive_non_compete": {"Non-Compete", "Noncompete", "Non Competition"},
+    "high_liability_cap": {"Liability", "Indemnification", "Indemnity"},
+    "long_payment_terms": {"Payment Terms", "Payment"},
+}
+
+
+def _clause_type_in(clause: dict, allowed: set) -> bool:
+    ct = clause.get("clause_type")
+    if not ct:
+        return False
+    return any(ct.lower() == a.lower() for a in allowed)
 
 
 def _condition_excessive_notice(clause: dict, attributes: dict) -> Optional[dict]:
+    if not _clause_type_in(clause, ALLOWED_CLAUSE_TYPES["excessive_notice"]):
+        return None
     notice_days = attributes.get("notice_days")
     if notice_days is not None and notice_days > 90:
         return {
@@ -56,6 +73,8 @@ def _condition_excessive_notice(clause: dict, attributes: dict) -> Optional[dict
 
 
 def _condition_unlimited_liability(clause: dict, attributes: dict) -> Optional[dict]:
+    if not _clause_type_in(clause, ALLOWED_CLAUSE_TYPES["unlimited_liability"]):
+        return None
     if attributes.get("has_unlimited_liability"):
         return {
             "detected": True,
@@ -66,6 +85,8 @@ def _condition_unlimited_liability(clause: dict, attributes: dict) -> Optional[d
 
 
 def _condition_one_sided_termination(clause: dict, attributes: dict) -> Optional[dict]:
+    if not _clause_type_in(clause, ALLOWED_CLAUSE_TYPES["one_sided_termination"]):
+        return None
     if attributes.get("has_one_sided_termination"):
         return {
             "detected": True,
@@ -75,26 +96,9 @@ def _condition_one_sided_termination(clause: dict, attributes: dict) -> Optional
     return None
 
 
-def _condition_missing_confidentiality(clause: dict, attributes: dict) -> Optional[dict]:
-    clause_type = clause.get("clause_type", "")
-    if clause_type and clause_type != "Confidentiality":
-        return None
-    return None
-
-
-def _condition_missing_clause(clause_type: str, clauses: list) -> Optional[dict]:
-    found = any(
-        c.get("clause_type") == clause_type for c in clauses
-    )
-    if not found:
-        return {
-            "detected": True,
-            "extracted_value": f"No {clause_type.lower()} clause found",
-        }
-    return None
-
-
 def _condition_excessive_non_compete(clause: dict, attributes: dict) -> Optional[dict]:
+    if not _clause_type_in(clause, ALLOWED_CLAUSE_TYPES["excessive_non_compete"]):
+        return None
     months = attributes.get("non_compete_months")
     if months is not None and months > 12:
         return {
@@ -105,33 +109,53 @@ def _condition_excessive_non_compete(clause: dict, attributes: dict) -> Optional
     return None
 
 
+_LIABILITY_MULTIPLIERS = [
+    ("BILLION", 1_000_000_000),
+    ("MILLION", 1_000_000),
+    ("THOUSAND", 1_000),
+    ("K", 1_000),
+    ("M", 1_000_000),
+]
+
+
+def _parse_monetary_value(cap: str) -> Optional[float]:
+    cleaned = cap.replace(",", "").replace("$", "").replace("USD", "").replace("EUR", "").replace("GBP", "").replace("INR", "").strip().upper()
+    parts = cleaned.split()
+    if not parts:
+        return None
+    for suffix, multiplier in _LIABILITY_MULTIPLIERS:
+        if suffix in cleaned:
+            try:
+                idx = parts.index(suffix)
+                if idx > 0:
+                    return float(parts[idx - 1]) * multiplier
+                return None
+            except (ValueError, IndexError):
+                continue
+    try:
+        return float(parts[0])
+    except (ValueError, IndexError):
+        return None
+
+
 def _condition_high_liability_cap(clause: dict, attributes: dict) -> Optional[dict]:
+    if not _clause_type_in(clause, ALLOWED_CLAUSE_TYPES["high_liability_cap"]):
+        return None
     cap = attributes.get("liability_cap")
     if cap:
-        try:
-            cap_clean = cap.replace(",", "").upper()
-            if "MILLION" in cap_clean:
-                val = float(cap_clean.split()[0]) * 1_000_000
-            elif "BILLION" in cap_clean:
-                val = float(cap_clean.split()[0]) * 1_000_000_000
-            elif "THOUSAND" in cap_clean or "K" in cap_clean:
-                val = float(cap_clean.split()[0]) * 1_000
-            elif "M" in cap_clean and not cap_clean.startswith("M"):
-                val = float(cap_clean.split()[0]) * 1_000_000
-            else:
-                val = float(cap_clean.split()[0])
-            if val > 10_000_000:
-                return {
-                    "detected": True,
-                    "extracted_value": cap,
-                    "threshold": "$10,000,000",
-                }
-        except (ValueError, IndexError):
-            pass
+        val = _parse_monetary_value(cap)
+        if val is not None and val > 10_000_000:
+            return {
+                "detected": True,
+                "extracted_value": cap,
+                "threshold": "$10,000,000",
+            }
     return None
 
 
 def _condition_long_payment_terms(clause: dict, attributes: dict) -> Optional[dict]:
+    if not _clause_type_in(clause, ALLOWED_CLAUSE_TYPES["long_payment_terms"]):
+        return None
     days = attributes.get("payment_deadline_days")
     if days is not None and days > 60:
         return {
@@ -139,10 +163,6 @@ def _condition_long_payment_terms(clause: dict, attributes: dict) -> Optional[di
             "extracted_value": f"{days} days",
             "threshold": "60 days",
         }
-    return None
-
-
-def _condition_no_data_protection(clause: dict, attributes: dict) -> Optional[dict]:
     return None
 
 

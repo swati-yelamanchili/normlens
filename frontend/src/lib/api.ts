@@ -6,8 +6,13 @@ async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail || `API error: ${res.status}`)
+    let detail: string
+    try {
+      detail = (await res.json()).detail
+    } catch {
+      detail = res.statusText
+    }
+    throw new Error(detail || `API error: ${res.status}`)
   }
   return res.json()
 }
@@ -19,7 +24,15 @@ export async function uploadContract(file: File) {
     method: 'POST',
     body: form,
   })
-  if (!res.ok) throw new Error((await res.json()).detail || 'Upload failed')
+  if (!res.ok) {
+    let detail: string
+    try {
+      detail = (await res.json()).detail
+    } catch {
+      detail = `Upload failed (${res.status})`
+    }
+    throw new Error(detail || 'Upload failed')
+  }
   return res.json()
 }
 

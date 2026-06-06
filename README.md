@@ -26,7 +26,7 @@ Upload → Parse → Segment → Embed → Classify → Extract → Detect Risks
 |-----------|-----------|
 | Backend | FastAPI (Python) |
 | Frontend | Next.js (TypeScript, TailwindCSS) |
-| ML | sentence-transformers, scikit-learn |
+| ML | deterministic local embeddings by default, optional sentence-transformers |
 | Database | PostgreSQL + ChromaDB |
 | Document Parsing | PyMuPDF, pdfplumber, python-docx |
 
@@ -47,6 +47,15 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
+```
+
+The base install uses lightweight deterministic hashing embeddings so local setup does
+not download PyTorch. For production-quality semantic embeddings, install the optional
+CPU-only ML stack and enable it:
+
+```bash
+pip install -r requirements-ml.txt
+EMBEDDING_BACKEND=sentence-transformers uvicorn app.main:app --reload --port 8000
 ```
 
 ### Frontend Setup
