@@ -59,7 +59,22 @@ class MarketNormDatabase:
                     "values": self._generate_distribution(30, 90, 180, 60),
                     "unit": "days",
                     "description": "Confidentiality obligation period",
-                }
+                },
+                "confidentiality_broad_definition": {
+                    "values": [0, 1] * 25 + [0] * 50,
+                    "unit": "boolean",
+                    "description": "Overly broad confidentiality definition",
+                },
+                "confidentiality_standard_exclusions": {
+                    "values": [0, 1] * 40 + [1] * 20,
+                    "unit": "boolean",
+                    "description": "Standard exclusions present in confidentiality clause",
+                },
+                "confidentiality_return_obligation": {
+                    "values": [0, 1] * 45 + [1] * 10,
+                    "unit": "boolean",
+                    "description": "Return or destroy obligation upon termination",
+                },
             },
             "Insurance": {
                 "insurance_amount": {
@@ -74,6 +89,101 @@ class MarketNormDatabase:
                     "unit": "USD",
                     "description": "Indemnification cap",
                 }
+            },
+            "Intellectual Property": {
+                "ip_ownership_transfer": {
+                    "values": [0, 1] * 50,
+                    "unit": "boolean",
+                    "description": "IP ownership assigned to one party",
+                },
+                "ip_license_back": {
+                    "values": [0, 1] * 40 + [0] * 20,
+                    "unit": "boolean",
+                    "description": "License back granted to contributing party",
+                },
+                "ip_indemnification": {
+                    "values": [0, 1] * 30 + [1] * 40,
+                    "unit": "boolean",
+                    "description": "IP infringement indemnification present",
+                },
+                "pre_existing_ip_acknowledged": {
+                    "values": [0, 1] * 40 + [1] * 20,
+                    "unit": "boolean",
+                    "description": "Pre-existing IP rights acknowledged",
+                },
+            },
+            "Data Ownership": {
+                "data_ownership_defined": {
+                    "values": [0, 1] * 45 + [1] * 10,
+                    "unit": "boolean",
+                    "description": "Data ownership explicitly defined",
+                },
+                "data_usage_restricted": {
+                    "values": [0, 1] * 40 + [1] * 20,
+                    "unit": "boolean",
+                    "description": "Data usage restricted to contract purpose",
+                },
+                "data_deletion_obligation": {
+                    "values": [0, 1] * 35 + [1] * 30,
+                    "unit": "boolean",
+                    "description": "Data deletion obligation upon termination",
+                },
+            },
+            "Security Obligations": {
+                "security_measures_defined": {
+                    "values": [0, 1] * 30 + [1] * 40,
+                    "unit": "boolean",
+                    "description": "Specific security measures defined",
+                },
+                "security_breach_notification": {
+                    "values": [0, 1] * 35 + [1] * 30,
+                    "unit": "boolean",
+                    "description": "Breach notification requirement present",
+                },
+                "security_audit_rights": {
+                    "values": [0, 1] * 40 + [0] * 20,
+                    "unit": "boolean",
+                    "description": "Security audit rights granted",
+                },
+            },
+            "Indemnification": {
+                "liability_cap": {
+                    "values": self._generate_distribution(500000, 2000000, 10000000, 50),
+                    "unit": "USD",
+                    "description": "Indemnification cap",
+                },
+                "indemnification_mutual": {
+                    "values": [0, 1] * 30 + [1] * 40,
+                    "unit": "boolean",
+                    "description": "Mutual indemnification",
+                },
+                "indemnification_survival_years": {
+                    "values": self._generate_distribution(1, 2, 3, 60),
+                    "unit": "years",
+                    "description": "Indemnification survival period",
+                },
+            },
+            "Limitation of Liability": {
+                "liability_cap": {
+                    "values": self._generate_distribution(500000, 2000000, 10000000, 80),
+                    "unit": "USD",
+                    "description": "Liability cap amount",
+                },
+                "lol_exclusions_present": {
+                    "values": [0, 1] * 35 + [1] * 30,
+                    "unit": "boolean",
+                    "description": "Key exclusions from liability cap specified",
+                },
+                "lol_mutual": {
+                    "values": [0, 1] * 35 + [1] * 30,
+                    "unit": "boolean",
+                    "description": "Mutual limitation of liability",
+                },
+                "lol_excludes_ip": {
+                    "values": [0, 1] * 30 + [1] * 40,
+                    "unit": "boolean",
+                    "description": "IP infringement excluded from liability cap",
+                },
             },
         }
 
