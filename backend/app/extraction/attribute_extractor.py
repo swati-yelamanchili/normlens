@@ -10,16 +10,62 @@ logger = logging.getLogger(__name__)
 GENERAL = None
 
 EXTRACTION_GATES = {
-    "notice_days": {"Termination", "Term", "Cancellation"},
+    "notice_days": {"Termination", "Term", "Cancellation", GENERAL},
     "payment_deadline_days": {"Payment Terms", "Payment", "Compensation", "Billing", GENERAL},
     "liability_cap": {"Liability", "Limitation of Liability", "Indemnification", "Indemnity", GENERAL},
-    "non_compete_months": {"Non-Compete", "Noncompete", "Non Competition", "Non-Competition"},
+    "non_compete_months": {"Non-Compete", "Noncompete", "Non Competition", "Non-Competition", GENERAL},
     "contract_duration_months": {"Term", "Termination", "Agreement", GENERAL},
     "penalty_percentage": {"Payment Terms", "Payment", "Late Payment", "Billing", GENERAL},
     "renewal_notice_days": {"Renewal", "Term"},
     "insurance_amount": {"Insurance"},
     "has_unlimited_liability": {"Liability", "Limitation of Liability", "Indemnification", "Indemnity", GENERAL},
     "has_one_sided_termination": {"Termination", "Term", "Cancellation"},
+    # IP attributes
+    "ip_ownership_transfer": {"Intellectual Property", GENERAL},
+    "ip_license_back": {"Intellectual Property", GENERAL},
+    "ip_indemnification": {"Intellectual Property", "Indemnification", "Indemnity", GENERAL},
+    "pre_existing_ip_acknowledged": {"Intellectual Property", GENERAL},
+    "ip_work_for_hire": {"Intellectual Property", GENERAL},
+    "ip_exclusive_license": {"Intellectual Property", GENERAL},
+    "ip_perpetual_license": {"Intellectual Property", GENERAL},
+    "ip_copyright_assignment": {"Intellectual Property", GENERAL},
+    # Data attributes
+    "data_ownership_defined": {"Data Ownership", "Data Protection", GENERAL},
+    "data_usage_restricted": {"Data Ownership", "Data Protection", GENERAL},
+    "data_deletion_obligation": {"Data Ownership", "Data Protection", GENERAL},
+    "data_derived_ownership": {"Data Ownership", "Data Protection", GENERAL},
+    "data_analytics_rights": {"Data Ownership", "Data Protection", GENERAL},
+    "data_resale_rights": {"Data Ownership", "Data Protection", GENERAL},
+    "data_sharing_rights": {"Data Ownership", "Data Protection", GENERAL},
+    # Confidentiality attributes
+    "confidentiality_broad_definition": {"Confidentiality", GENERAL},
+    "confidentiality_standard_exclusions": {"Confidentiality", GENERAL},
+    "confidentiality_return_obligation": {"Confidentiality", GENERAL},
+    "confidentiality_mutual": {"Confidentiality", GENERAL},
+    "confidentiality_duration_years": {"Confidentiality", GENERAL},
+    "confidentiality_permitted_disclosures": {"Confidentiality", GENERAL},
+    # Security attributes
+    "security_measures_defined": {"Security Obligations", "Data Protection", GENERAL},
+    "security_breach_notification": {"Security Obligations", "Data Protection", GENERAL},
+    "security_audit_rights": {"Security Obligations", "Data Protection", GENERAL},
+    "security_standard_compliant": {"Security Obligations", "Data Protection", GENERAL},
+    "security_encryption_required": {"Security Obligations", "Data Protection", GENERAL},
+    "security_access_control": {"Security Obligations", "Data Protection", GENERAL},
+    "security_incident_response": {"Security Obligations", "Data Protection", GENERAL},
+    "breach_notification_days": {"Security Obligations", "Data Protection", GENERAL},
+    # Indemnification / LoL attributes
+    "indemnification_mutual": {"Indemnification", "Indemnity", GENERAL},
+    "indemnification_survival_years": {"Indemnification", "Indemnity", "Survival", GENERAL},
+    "indemnification_third_party_claims": {"Indemnification", "Indemnity", GENERAL},
+    "indemnification_defense_obligations": {"Indemnification", "Indemnity", GENERAL},
+    "lol_exclusions_present": {"Limitation of Liability", "Liability", GENERAL},
+    "lol_mutual": {"Limitation of Liability", "Liability", GENERAL},
+    "lol_excludes_ip": {"Limitation of Liability", "Liability", GENERAL},
+    "lol_carveout_confidentiality": {"Limitation of Liability", "Liability", GENERAL},
+    "lol_carveout_fraud": {"Limitation of Liability", "Liability", GENERAL},
+    "lol_carveout_gross_negligence": {"Limitation of Liability", "Liability", GENERAL},
+    "lol_carveout_death_injury": {"Limitation of Liability", "Liability", GENERAL},
+    # General
     "arbitration_location": {"Arbitration", "Dispute Resolution", "Governing Law"},
     "governing_law": {"Governing Law", "Dispute Resolution", "Arbitration", GENERAL},
 }
@@ -153,6 +199,138 @@ class AttributeExtractor:
             if governing_law:
                 attributes["governing_law"] = governing_law
 
+        if self._type_matches(clause_type, EXTRACTION_GATES["ip_ownership_transfer"]):
+            attributes["ip_ownership_transfer"] = self._detect_ip_ownership_transfer(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["ip_license_back"]):
+            attributes["ip_license_back"] = self._detect_ip_license_back(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["ip_indemnification"]):
+            attributes["ip_indemnification"] = self._detect_ip_indemnification(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["pre_existing_ip_acknowledged"]):
+            attributes["pre_existing_ip_acknowledged"] = self._detect_pre_existing_ip(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["data_ownership_defined"]):
+            attributes["data_ownership_defined"] = self._detect_data_ownership(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["data_usage_restricted"]):
+            attributes["data_usage_restricted"] = self._detect_data_usage_restrictions(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["data_deletion_obligation"]):
+            attributes["data_deletion_obligation"] = self._detect_data_deletion_obligation(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["confidentiality_broad_definition"]):
+            attributes["confidentiality_broad_definition"] = self._detect_confidentiality_broad(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["confidentiality_standard_exclusions"]):
+            attributes["confidentiality_standard_exclusions"] = self._detect_confidentiality_exclusions(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["confidentiality_return_obligation"]):
+            attributes["confidentiality_return_obligation"] = self._detect_confidentiality_return(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["security_measures_defined"]):
+            attributes["security_measures_defined"] = self._detect_security_measures(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["security_breach_notification"]):
+            attributes["security_breach_notification"] = self._detect_security_breach_notification(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["security_audit_rights"]):
+            attributes["security_audit_rights"] = self._detect_security_audit_rights(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["indemnification_mutual"]):
+            attributes["indemnification_mutual"] = self._detect_indemnification_mutual(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["indemnification_survival_years"]):
+            val = self._extract_indemnification_survival(clause_text)
+            if val is not None:
+                attributes["indemnification_survival_years"] = val
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["lol_exclusions_present"]):
+            attributes["lol_exclusions_present"] = self._detect_lol_exclusions(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["lol_mutual"]):
+            attributes["lol_mutual"] = self._detect_lol_mutual(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["lol_excludes_ip"]):
+            attributes["lol_excludes_ip"] = self._detect_lol_excludes_ip(clause_text)
+
+        # New IP attributes
+        if self._type_matches(clause_type, EXTRACTION_GATES["ip_work_for_hire"]):
+            attributes["ip_work_for_hire"] = self._detect_ip_work_for_hire(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["ip_exclusive_license"]):
+            attributes["ip_exclusive_license"] = self._detect_ip_exclusive_license(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["ip_perpetual_license"]):
+            attributes["ip_perpetual_license"] = self._detect_ip_perpetual_license(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["ip_copyright_assignment"]):
+            attributes["ip_copyright_assignment"] = self._detect_ip_copyright_assignment(clause_text)
+
+        # New Data attributes
+        if self._type_matches(clause_type, EXTRACTION_GATES["data_derived_ownership"]):
+            attributes["data_derived_ownership"] = self._detect_data_derived_ownership(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["data_analytics_rights"]):
+            attributes["data_analytics_rights"] = self._detect_data_analytics_rights(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["data_resale_rights"]):
+            attributes["data_resale_rights"] = self._detect_data_resale_rights(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["data_sharing_rights"]):
+            attributes["data_sharing_rights"] = self._detect_data_sharing_rights(clause_text)
+
+        # New Confidentiality attributes
+        if self._type_matches(clause_type, EXTRACTION_GATES["confidentiality_mutual"]):
+            attributes["confidentiality_mutual"] = self._detect_confidentiality_mutual(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["confidentiality_duration_years"]):
+            val = self._extract_confidentiality_duration(clause_text)
+            if val is not None:
+                attributes["confidentiality_duration_years"] = val
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["confidentiality_permitted_disclosures"]):
+            attributes["confidentiality_permitted_disclosures"] = self._detect_confidentiality_permitted_disclosures(clause_text)
+
+        # New Security attributes
+        if self._type_matches(clause_type, EXTRACTION_GATES["security_standard_compliant"]):
+            attributes["security_standard_compliant"] = self._detect_security_standard_compliant(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["security_encryption_required"]):
+            attributes["security_encryption_required"] = self._detect_security_encryption_required(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["security_access_control"]):
+            attributes["security_access_control"] = self._detect_security_access_control(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["security_incident_response"]):
+            attributes["security_incident_response"] = self._detect_security_incident_response(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["breach_notification_days"]):
+            val = self._extract_breach_notification_days(clause_text)
+            if val is not None:
+                attributes["breach_notification_days"] = val
+
+        # New Indemnification attributes
+        if self._type_matches(clause_type, EXTRACTION_GATES["indemnification_third_party_claims"]):
+            attributes["indemnification_third_party_claims"] = self._detect_indemnification_third_party(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["indemnification_defense_obligations"]):
+            attributes["indemnification_defense_obligations"] = self._detect_indemnification_defense(clause_text)
+
+        # New LoL carve-out attributes
+        if self._type_matches(clause_type, EXTRACTION_GATES["lol_carveout_confidentiality"]):
+            attributes["lol_carveout_confidentiality"] = self._detect_lol_carveout_confidentiality(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["lol_carveout_fraud"]):
+            attributes["lol_carveout_fraud"] = self._detect_lol_carveout_fraud(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["lol_carveout_gross_negligence"]):
+            attributes["lol_carveout_gross_negligence"] = self._detect_lol_carveout_gross_negligence(clause_text)
+
+        if self._type_matches(clause_type, EXTRACTION_GATES["lol_carveout_death_injury"]):
+            attributes["lol_carveout_death_injury"] = self._detect_lol_carveout_death_injury(clause_text)
+
         return attributes
 
     def _type_matches(self, clause_type: Optional[str], allowed_types: set) -> bool:
@@ -237,7 +415,7 @@ class AttributeExtractor:
 
     def _extract_notice_period(self, text: str) -> Optional[int]:
         patterns = [
-            r"(?:upon|after|following|by|give|given)\s+(\d+)\s*(?:day|business\s*day|calendar\s*day)s?\s*(?:prior\s+)?(?:written\s+)?notice",
+            r"(?:upon|after|following|by|give|given|with)\s+(\d+)\s*(?:day|business\s*day|calendar\s*day)s?\s*(?:prior\s+)?(?:written\s+)?notice",
             r"(\d+)\s*(?:day|business\s*day|calendar\s*day)s?\s*(?:prior\s+)?(?:written\s+)?notice\s*(?:of\s+)?(?:termination|cancel)",
             r"(?:terminat(?:e|ion|ed|ing)|cancel)\s+(?:\w+\s+){0,5}?(?:requires|shall\s+require|may\s+be\s+made|may\s+be\s+effected|may\s+be\s+given)\s*(?:by\s+)?(?:written\s+)?notice\s*(?:of\s+)?(?:not\s+less\s+than\s+)?(\d+)\s*(?:day|business\s*day|calendar\s*day)s?",
             r"notice\s*(?:period\s+)?(?:of\s+)?(\d+)\s*(?:day|business\s*day|calendar\s*day)s?\s*(?:prior\s+to\s+)?(?:termination|cancel)",
@@ -386,3 +564,413 @@ class AttributeExtractor:
                 val = re.sub(r"\s+", " ", val)
                 return val
         return None
+
+    def _detect_ip_ownership_transfer(self, text: str) -> bool:
+        patterns = [
+            r"(?:shall\s+be\s+)?(?:the\s+)?(?:sole\s+and\s+)?(?:exclusive\s+)?(?:property|owner|ownership)\s+(?:of|shall\s+(?:be\s+)?vest\s+in)",
+            r"(?:assigns?\s+|hereby\s+assigns?\s+)(?:all\s+)?(?:right,\s+)?title\s+(?:and\s+)?interest\s+in\s+and\s+to",
+            r"(?:shall\s+)?own\s+(?:all\s+)?(?:right,\s+)?title\s+(?:and\s+)?interest",
+            r"(?:all\s+)?intellectual\s+property\s+(?:rights\s+)?(?:shall\s+)?(?:be\s+)?(?:the\s+)?(?:sole\s+and\s+)?exclusive\s+(?:property|ownership)",
+            r"(?:ownership|title)\s+(?:to|of)\s+(?:any\s+)?(?:and\s+all\s+)?intellectual\s+property\s+(?:shall\s+)?(?:be\s+)?(?:vested\s+in|transferred\s+to|assigned\s+to)",
+            r"(?:shall\s+)?own\s+(?:all\s+)?(?:intellectual\s+property|ip|rights)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_ip_license_back(self, text: str) -> bool:
+        patterns = [
+            r"(?:retains?\s+a\s+|hereby\s+retains?\s+|is\s+(?:hereby\s+)?granted\s+a\s+)(?:non.?exclusive|perpetual|irrevocable|royalty.?free|worldwide)",
+            r"(?:grants?\s+|hereby\s+grants?\s+)(?:back\s+)?(?:to\s+)?(?:the\s+)?(?:contributing|providing|disclosing|licensor)\s+party\s+a\s+(?:non.?exclusive|perpetual|irrevocable|royalty.?free)",
+            r"(?:license\s+back|grant.back|retained\s+license)",
+            r"(?:shall\s+be\s+)?(?:deemed\s+to\s+)?(?:have\s+)?(?:been\s+)?granted\s+(?:a\s+)?(?:non.?exclusive|perpetual|irrevocable)\s+license",
+            r"(?:non.?exclusive|perpetual|irrevocable|royalty.?free)\s+license\s+(?:to|back)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_ip_indemnification(self, text: str) -> bool:
+        patterns = [
+            r"(?:indemnify|hold\s+harmless)\s+(?:.*?)?(?:against|from|for)\s+(?:any|all)\s+(?:claim|action|liability|lawsuit|proceeding).*?(?:infring|violat|misappropri)",
+            r"(?:indemnify|indemnification)\s+(?:against|from|for)\s+(?:any|all)\s+(?:claim|action|liability).*?(?:intellectual\s+property|patent|copyright|trademark|trade\s+secret)",
+            r"(?:infringement|violation|misappropriation)\s+(?:of|claim)\s+(?:any\s+)?(?:third.?party\s+)?(?:rights|ip|intellectual\s+property)\s+(?:shall\s+)?(?:be\s+)?(?:defended|indemnified)",
+            r"(?:ip\s+)?indemnif(?:y|ication)\s+(?:for|against)\s+(?:infringement|violation)",
+            r"(?:indemnify|indemnification)\s+.*?(?:intellectual\s+property|patent|copyright|trademark)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_pre_existing_ip(self, text: str) -> bool:
+        patterns = [
+            r"(?:pre.?existing|preexisting|background|prior)\s+(?:intellectual\s+property|ip|technology|materials|work)",
+            r"(?:existing\s+)?(?:intellectual\s+property|ip)\s+(?:owned|developed)\s+(?:prior\s+to|before|previously)",
+            r"(?:retains?\s+)?(?:all\s+)?(?:right|ownership)\s+(?:in|to)\s+(?:its?\s+)?(?:pre.?existing|preexisting|background)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_data_ownership(self, text: str) -> bool:
+        patterns = [
+            r"(?:data|information)\s+(?:shall\s+)?(?:be\s+)?(?:owned\s+by|is\s+the\s+(?:sole\s+)?(?:and\s+exclusive\s+)?property\s+of)",
+            r"(?:ownership|title)\s+(?:of|to)\s+(?:the\s+)?(?:data|information)\s+(?:shall\s+)?(?:be\s+)?(?:vested\s+in|retained\s+by)",
+            r"(?:all\s+)?(?:data|information)\s+(?:shall\s+)?(?:remain\s+)?(?:the\s+)?(?:sole\s+and\s+)?exclusive\s+(?:property|ownership)",
+            r"(?:each\s+)?party\s+(?:shall\s+)?(?:own|retain)\s+(?:all\s+)?(?:right|title|interest)\s+(?:in|to)\s+(?:its?\s+)?(?:data|information)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_data_usage_restrictions(self, text: str) -> bool:
+        patterns = [
+            r"(?:shall\s+)?(?:not\s+)?(?:use|process|disclose|share|transfer)\s+(?:the\s+)?(?:data|information)\s+(?:for\s+(?:any\s+)?(?:purpose|reason)\s+(?:other|beyond)|except\s+(?:as\s+)?(?:permitted|necessary))",
+            r"(?:may\s+(?:only|solely|exclusively)|limited\s+to|restricted\s+to)\s+(?:use|process)\s+(?:the\s+)?(?:data|information)\s+(?:for\s+)?(?:the\s+)?(?:purpose|scope)",
+            r"(?:data|information)\s+(?:shall\s+)?(?:only|not\s+be)\s+used\s+(?:for|in\s+connection\s+with)\s+(?:the\s+)?(?:purpose|agreement|service)",
+            r"(?:no\s+right|no\s+license|no\s+ownership)\s+(?:is\s+)?granted\s+(?:to|in)\s+(?:the\s+)?(?:data|information)\s+(?:other\s+than|beyond|except)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_data_deletion_obligation(self, text: str) -> bool:
+        patterns = [
+            r"(?:shall\s+)?(?:delete|destroy|return|erase|remove)\s+(?:all\s+)?(?:copies\s+of\s+)?(?:the\s+)?(?:data|information)\s+(?:upon\s+|after\s+|following\s+|within\s+.*?\s+of\s+)(?:termination|expir|cancel|completion|conclusion)",
+            r"(?:upon|after|following)\s+(?:termination|expir|cancel|completion)\s+(?:of\s+this\s+)?(?:agreement|contract)\s*[,;]?\s*(?:the\s+)?(?:data|information)\s+(?:shall\s+)?be\s+(?:deleted|destroyed|returned|erased)",
+            r"(?:obligat|require)?(?:to\s+)?(?:delete|destroy|return|erase)\s+(?:any\s+)?(?:and\s+all\s+)?(?:data|information|confidential)",
+            r"(?:certify|certification)\s+(?:in\s+)?writing\s+(?:that\s+)?(?:the\s+)?(?:data|information)\s+(?:has\s+)?(?:been\s+)?(?:deleted|destroyed|erased)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_confidentiality_broad(self, text: str) -> bool:
+        patterns = [
+            r"(?:any\s+(?:and\s+all\s+)?)(?:information|data|communication|material|document)",
+            r"(?:all\s+)?(?:information|data|communication|material|document)\s+(?:of\s+)?(?:whatsoever|whatsoever\s+nature|in\s+any\s+form)",
+            r"any\s+(?:and\s+all\s+)?(?:oral|written|electronic|visual)\s+(?:information|data|communication)",
+            r"any\s+(?:and\s+all\s+)?information\s+(?:relating|pertaining)\s+to\s+(?:the\s+)?(?:business|company|agreement|relationship)",
+            r"without\s+(?:limiting|restricting)\s+(?:the\s+)?(?:generality|foregoing)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_confidentiality_exclusions(self, text: str) -> bool:
+        patterns = [
+            r"(?:exception|excluding|excluded|does\s+not\s+apply)\s+(?:to|for)",
+            r"(?:public\s+(?:domain|knowledge)|publicly\s+available|becomes\s+public)",
+            r"(?:independently\s+(?:developed|created)|developed\s+without\s+use)",
+            r"(?:rightfully\s+(?:received|obtained)\s+(?:from\s+)?(?:a\s+)?third\s+part)",
+            r"(?:required\s+(?:to\s+be\s+)?disclosed|required\s+by\s+(?:law|regulation|legal\s+process))",
+            r"(?:written\s+)?consent|authorization\s+(?:of\s+)?(?:the\s+)?(?:disclosing|owner)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_confidentiality_return(self, text: str) -> bool:
+        patterns = [
+            r"(?:shall\s+)?(?:return|destroy|delete|surrender|deliver\s+up)\s+(?:all\s+)?(?:copies\s+of\s+)?(?:the\s+)?(?:confidential\s+)?(?:information|material|document)",
+            r"(?:promptly|immediately|within\s+\d+\s+(?:day|business\s*day)s?)\s+(?:upon|after|following)\s+(?:the\s+)?(?:request|termination|expir)",
+            r"(?:return|destroy|delete)\s+(?:any\s+)?(?:and\s+all\s+)?(?:confidential\s+)?(?:information|material|document)\s+(?:in\s+)?(?:its?\s+)?possession",
+            r"(?:shall\s+)?(?:cease\s+all\s+use|certify\s+in\s+writing)\s+(?:of\s+)?(?:the\s+)?(?:confidential\s+)?(?:information|material)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_security_measures(self, text: str) -> bool:
+        patterns = [
+            r"(?:implement|maintain|adopt|establish)\s+(?:and\s+(?:maintain|enforce))?\s+(?:appropriate|reasonable|adequate|technical|organizational|administrative|physical)\s+(?:security|safeguard|measure|control|procedure)",
+            r"(?:encryption|firewall|access\s+control|multi.?factor\s+auth|intrusion\s+detection|anti.?virus)",
+            r"(?:security\s+(?:measure|standard|control|policy|procedure|practice|requirement))",
+            r"(?:information\s+security|cyber.security|cybersecurity|data\s+security)\s+(?:program|framework|policy|standard)",
+            r"(?:ISO\s*27001|SOC\s*2|NIST|PCI\s*DSS|HIPAA|GDPR)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_security_breach_notification(self, text: str) -> bool:
+        patterns = [
+            r"(?:notify|notification|notify\s+promptly)\s+(?:the\s+)?(?:other\s+)?party\s+(?:in\s+)?(?:the\s+)?(?:event|case|situation)\s+(?:of\s+)?(?:a\s+)?(?:security|data)\s+(?:breach|incident|compromise)",
+            r"(?:security|data|breach|personal\s+data)\s+(?:breach|incident|compromise)\s+(?:notification|notice|report)",
+            r"(?:shall\s+)?(?:promptly|immediately|within\s+\d+\s*(?:hour|day)s?)\s+notify",
+            r"(?:breach|incident|unauthorized\s+access)\s+(?:of|to)\s+(?:the\s+)?(?:data|system|information)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_security_audit_rights(self, text: str) -> bool:
+        patterns = [
+            r"(?:right|entitled|permitted)\s+(?:to\s+)?(?:audit|inspect|review|examine|assess)\s+(?:the\s+)?(?:security|system|facility|control|data\s+center)",
+            r"(?:audit|inspection|assessment)\s+(?:right|provision|clause|obligation)",
+            r"(?:upon\s+)?(?:reasonable\s+)?(?:notice|request)\s+(?:conduct|perform|carry\s+out)\s+(?:an\s+)?(?:audit|inspection|examination)",
+            r"(?:audit|inspect|verify)\s+(?:compliance|adherence)\s+(?:with|to)\s+(?:the\s+)?(?:security|this)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_indemnification_mutual(self, text: str) -> bool:
+        patterns = [
+            r"(?:each\s+party|both\s+parties)\s+(?:shall|agrees|will)\s+(?:indemnify|defend|hold\s+harmless)",
+            r"(?:mutual|reciprocal|cross)\s+indemnif",
+            r"(?:indemnif(?:y|ication|ies))\s+(?:by|from)\s+(?:each|both)\s+(?:party|parties)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _extract_indemnification_survival(self, text: str) -> Optional[int]:
+        patterns = [
+            r"(?:indemnification|indemnity|indemnify)\s+(?:obligation|liability)?\s*(?:shall|will)?\s*(?:survive|continue|remain\s+in\s+effect)\s+(?:for\s+)?(?:a\s+(?:period\s+of\s+)?)?(\d+)\s*(?:year|month)s?",
+            r"(?:survival|survive)\s+(?:period|term)?\s*(?:of|:)?\s*(\d+)\s*(?:year|month)s?\s*(?:after|following|from|subsequent)",
+        ]
+        val = self._extract_first_int(text, patterns)
+        if val:
+            return self._months_from_years_if_needed(val, text)
+        return None
+
+    def _detect_lol_exclusions(self, text: str) -> bool:
+        patterns = [
+            r"(?:does\s+not\s+apply|excluded|exceptions|notwithstanding|nothing\s+in\s+this)",
+            r"(?:shall\s+not\s+(?:apply\s+to|limit|exclude|preclude))",
+            r"(?:death|personal\s+injury|bodily\s+injury|gross\s+negligence|willful\s+misconduct|fraud|intentional)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_lol_mutual(self, text: str) -> bool:
+        patterns = [
+            r"(?:each\s+party|both\s+parties|neither\s+party)\s+(?:shall|will|may)\s+(?:be\s+)?(?:liable|responsible|subject)",
+            r"(?:mutual|reciprocal)\s+(?:limitation|cap|exclusion)",
+            r"(?:limitation|cap|exclusion)\s+(?:of\s+)?liability\s+(?:applies|shall\s+apply)\s+(?:to|equally|mutually)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_lol_excludes_ip(self, text: str) -> bool:
+        patterns = [
+            r"(?:intellectual\s+property|ip|patent|copyright|trademark|trade\s+secret)\s+(?:infringement|violation|misappropriation)",
+            r"(?:infringement|violation)\s+(?:of\s+)?(?:intellectual\s+property|patent|copyright|trademark|trade\s+secret)",
+            r"(?:ip|intellectual\s+property)\s+(?:indemnif|claim)",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    # ---------------------------------------------------------------
+    # New IP Detection Methods
+    # ---------------------------------------------------------------
+
+    def _detect_ip_work_for_hire(self, text: str) -> bool:
+        patterns = [
+            r"\bwork[\s\-]+for[\s\-]+hire\b",
+            r"\bwork\s+made\s+for\s+hire\b",
+            r"\bmade[\s\-]+for[\s\-]+hire\b",
+            r"\bwork\s+product\b.*\bshall\s+be\b.*\bproperty\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_ip_exclusive_license(self, text: str) -> bool:
+        exclusive_patterns = [
+            r"\bexclusive\s+licen[cs]e\b",
+            r"\bgrants?\s+(?:an?\s+)?exclusive\s+(?:right|licen[cs]e)\b",
+        ]
+        non_exclusive_patterns = [
+            r"\bnon[\s\-]?exclusive\s+licen[cs]e\b",
+            r"\bnon[\s\-]?exclusive\s+(?:right|grant)\b",
+        ]
+        if any(re.search(p, text, re.IGNORECASE) for p in exclusive_patterns):
+            if not any(re.search(p, text, re.IGNORECASE) for p in non_exclusive_patterns):
+                return True
+        return False
+
+    def _detect_ip_perpetual_license(self, text: str) -> bool:
+        patterns = [
+            r"\bperpetual\s+licen[cs]e\b",
+            r"\bperpetual(?:,\s*irrevocable)?\s+(?:right|licen[cs]e|grant)\b",
+            r"\birrevocable(?:,\s*perpetual)?\s+licen[cs]e\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_ip_copyright_assignment(self, text: str) -> bool:
+        patterns = [
+            r"\bhereby\s+assigns?\b.*\b(?:copyright|patent|trademark|intellectual\s+property)\b",
+            r"\bassignment\s+of\s+(?:copyright|patent|trademark|all\s+(?:intellectual\s+property|ip))\b",
+            r"\b(?:copyright|patent)\s+(?:is\s+hereby\s+)?assigned\b",
+            r"\btransfers?\s+(?:all\s+)?(?:copyright|patent|ip|intellectual\s+property)\s+(?:rights?\s+)?to\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    # ---------------------------------------------------------------
+    # New Data Detection Methods
+    # ---------------------------------------------------------------
+
+    def _detect_data_derived_ownership(self, text: str) -> bool:
+        patterns = [
+            r"\bderived\s+data\b",
+            r"\baggregate(?:d)?\s+data\b",
+            r"\banonymized?\s+data\b",
+            r"\bde[\s\-]?identified\s+data\b",
+            r"\binferred\s+data\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_data_analytics_rights(self, text: str) -> bool:
+        patterns = [
+            r"\b(?:use|process|analyze|analyse)\s+(?:customer|user|client)\s+data\s+(?:for|to)\s+(?:analytics|statistical|benchmarking|improvement|training)\b",
+            r"\banalytics?\s+(?:rights?|data|purposes?)\b",
+            r"\buse\s+(?:of\s+)?(?:data|information)\s+(?:for|to\s+(?:improve|train|develop|enhance))\b",
+            r"\btelemetry\b",
+            r"\busage\s+data\b.*\b(?:may\s+use|collect|process)\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_data_resale_rights(self, text: str) -> bool:
+        patterns = [
+            r"\b(?:sell|resell|license|sublicen[cs]e|transfer|share|disclose)\s+(?:customer|user|client)\s+(?:data|information)\s+(?:to|with)\s+third[\s\-]?part(?:y|ies)\b",
+            r"\b(?:monetize|commercialize)\s+(?:customer|user|client)?\s*data\b",
+            r"\bsell\s+(?:or\s+)?(?:license|transfer)\s+(?:the\s+)?data\b",
+            r"\b(?:data|information)\s+(?:may\s+be\s+)?sold\b",
+            r"\bdata\s+(?:broker|marketplace|exchange)\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_data_sharing_rights(self, text: str) -> bool:
+        patterns = [
+            r"\bshare\s+(?:customer|user|client)?\s*data\s+with\s+third[\s\-]?part(?:y|ies)\b",
+            r"\bdisclose\s+(?:customer|user|client)\s+(?:data|information)\s+to\s+(?:third[\s\-]?part(?:y|ies)|affiliates|partners)\b",
+            r"\bdata\s+sharing\s+(?:agreement|arrangement|rights?)\b",
+            r"\bsubprocessor[s]?\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    # ---------------------------------------------------------------
+    # New Confidentiality Detection Methods
+    # ---------------------------------------------------------------
+
+    def _detect_confidentiality_mutual(self, text: str) -> bool:
+        patterns = [
+            r"\b(?:each\s+party|both\s+parties|mutual(?:ly)?)\s+(?:shall|agrees?|will)\s+(?:keep|hold|treat|maintain)\s+(?:the\s+other(?:'s)?\s+)?(?:confidential|proprietary)\b",
+            r"\bmutual(?:ly)?\s+confidential\b",
+            r"\b(?:each\s+party|both\s+parties)\s+(?:is|are)\s+(?:a\s+)?(?:disclosing\s+and\s+receiving|receiving\s+and\s+disclosing)\s+party\b",
+            r"\breciprocal\s+confidentiality\b",
+        ]
+        if any(re.search(p, text, re.IGNORECASE) for p in patterns):
+            return True
+        # One-sided signal: only Company's info is protected
+        one_sided = [
+            r"\b(?:company|client|licensor|employer)\s+(?:confidential|proprietary)\s+information\b",
+        ]
+        both_parties = [r"\beach\s+party\b", r"\bboth\s+parties\b", r"\bmutual\b"]
+        if any(re.search(p, text, re.IGNORECASE) for p in one_sided):
+            if not any(re.search(p, text, re.IGNORECASE) for p in both_parties):
+                return False
+        return True  # default assume mutual if unclear
+
+    def _extract_confidentiality_duration(self, text: str) -> Optional[int]:
+        patterns = [
+            r"(?:confidentiality|non[\s\-]?disclosure)\s+(?:obligation[s]?|restriction[s]?|period)\s+(?:shall\s+)?(?:survive|continue|remain\s+in\s+effect)\s+(?:for\s+)?(?:a\s+(?:period\s+of\s+)?)?(\d+)\s*(?:year|month)s?",
+            r"(?:for\s+(?:a\s+period\s+of\s+)?)?(\d+)\s*(?:year|month)s?\s+(?:following|after|from)\s+(?:the\s+)?(?:term|termination|expiry|end)\s+(?:of\s+this\s+(?:agreement|nda))?",
+            r"(?:term\s+of\s+)?(\d+)\s*(?:year|month)s?\s+from\s+(?:the\s+)?(?:date|effective\s+date)\s+(?:of\s+)?(?:this\s+agreement|disclosure)",
+        ]
+        val = self._extract_first_int(text, patterns)
+        if val:
+            return self._months_from_years_if_needed(val, text)
+        return None
+
+    def _detect_confidentiality_permitted_disclosures(self, text: str) -> bool:
+        patterns = [
+            r"\b(?:may\s+disclose|permitted\s+to\s+disclose|disclosure\s+permitted)\s+(?:to\s+)?(?:its?\s+)?(?:employees?|officers?|directors?|attorneys?|advisors?|representatives?)\b",
+            r"\bneed[\s\-]+to[\s\-]+know\s+basis\b",
+            r"\b(?:permitted|allowed)\s+disclosures?\b",
+            r"\bdisclose\s+(?:to\s+)?(?:its?\s+)?(?:legal\s+counsel|accountants?|auditors?)\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    # ---------------------------------------------------------------
+    # New Security Detection Methods
+    # ---------------------------------------------------------------
+
+    def _detect_security_standard_compliant(self, text: str) -> bool:
+        patterns = [
+            r"\bSOC\s*2\b",
+            r"\bISO\s*27001\b",
+            r"\bNIST\b",
+            r"\bPCI[\s\-]?DSS\b",
+            r"\bHIPAA\b",
+            r"\bGDPR\b",
+            r"\bFedRAMP\b",
+            r"\bCIS\s+(?:benchmark|control)\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_security_encryption_required(self, text: str) -> bool:
+        patterns = [
+            r"\bencrypt(?:ion|ed)\s+(?:in\s+transit|at\s+rest|of\s+(?:data|information))\b",
+            r"\bdata\s+(?:shall\s+(?:be\s+)?)?encrypted\b",
+            r"\b(?:require[sd]?|mandate[sd]?)\s+encryption\b",
+            r"\bAES[\s\-]?(?:128|192|256)\b",
+            r"\bTLS\s+(?:1\.[23])\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_security_access_control(self, text: str) -> bool:
+        patterns = [
+            r"\b(?:role[\s\-]+based\s+)?access\s+control[s]?\b",
+            r"\bleast[\s\-]+privilege\b",
+            r"\bmulti[\s\-]+factor\s+auth(?:entication)?\b",
+            r"\bMFA\b",
+            r"\b(?:single\s+sign[\s\-]+on|SSO)\b",
+            r"\bprivileged\s+access\s+(?:management|control)\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_security_incident_response(self, text: str) -> bool:
+        patterns = [
+            r"\bincident\s+response\s+(?:plan|procedure|policy|process)\b",
+            r"\b(?:respond|response)\s+to\s+(?:security\s+)?incidents?\b",
+            r"\bsecurity\s+(?:incident|event)\s+(?:management|handling|response)\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _extract_breach_notification_days(self, text: str) -> Optional[int]:
+        patterns = [
+            r"(?:notify|notification|report)\s+(?:within|no\s+later\s+than)\s+(\d+)\s*(?:hour|day|business\s*day)s?",
+            r"(\d+)[\s\-]*(?:hour|day|business\s*day)s?\s+(?:breach|incident|security)?\s*notification",
+            r"notification\s+(?:within|no\s+later\s+than)\s+(\d+)\s*(?:hour|day)s?",
+        ]
+        val = self._extract_first_int(text, patterns)
+        # Convert hours to day fraction (store as hours for clarity; or keep as-is)
+        return val
+
+    # ---------------------------------------------------------------
+    # New Indemnification Detection Methods
+    # ---------------------------------------------------------------
+
+    def _detect_indemnification_third_party(self, text: str) -> bool:
+        patterns = [
+            r"\bthird[\s\-]+party\s+(?:claim[s]?|action[s]?|lawsuit[s]?|proceeding[s]?)\b",
+            r"\bthird[\s\-]+party\s+(?:liability|loss(?:es)?|damage[s]?)\b",
+            r"\bclaim[s]?\s+(?:brought|made|asserted)\s+by\s+(?:any\s+)?third[\s\-]+part(?:y|ies)\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_indemnification_defense(self, text: str) -> bool:
+        patterns = [
+            r"\b(?:defend|defense)\s+(?:and\s+)?(?:indemnify|hold\s+harmless)\b",
+            r"\b(?:indemnify[,]?\s+defend[,]?\s+and\s+hold\s+harmless)\b",
+            r"\b(?:at\s+its\s+own\s+expense)\s+(?:defend|assume\s+the\s+defense)\b",
+            r"\bobligation\s+to\s+defend\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    # ---------------------------------------------------------------
+    # New LoL Carve-out Detection Methods
+    # ---------------------------------------------------------------
+
+    def _detect_lol_carveout_confidentiality(self, text: str) -> bool:
+        patterns = [
+            r"\bconfidentiality\s+(?:breach|obligation|violation)\b.*\b(?:excluded|not\s+(?:subject|limited)|notwithstanding)\b",
+            r"\b(?:excluded|notwithstanding|except)\b.*\bbreach\s+of\s+confidentiality\b",
+            r"\b(?:confidential(?:ity)?|proprietary)\s+information\b.*\b(?:excluded\s+from|not\s+(?:capped|limited))\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_lol_carveout_fraud(self, text: str) -> bool:
+        patterns = [
+            r"\bfraud(?:ulent)?\b.*\b(?:excluded|not\s+(?:subject|limited)|notwithstanding)\b",
+            r"\b(?:excluded|notwithstanding|except)\b.*\bfraud\b",
+            r"\bwillful\s+(?:misconduct|misrepresentation)\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_lol_carveout_gross_negligence(self, text: str) -> bool:
+        patterns = [
+            r"\bgross\s+negligence\b.*\b(?:excluded|not\s+(?:subject|limited)|notwithstanding)\b",
+            r"\b(?:excluded|notwithstanding|except)\b.*\bgross\s+negligence\b",
+            r"\bgross\s+negligence\s+(?:or|and)\s+willful\s+misconduct\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _detect_lol_carveout_death_injury(self, text: str) -> bool:
+        patterns = [
+            r"\b(?:death|personal\s+injury|bodily\s+injury)\b.*\b(?:excluded|not\s+(?:subject|limited)|notwithstanding)\b",
+            r"\b(?:excluded|notwithstanding|except)\b.*\b(?:death|personal\s+injury)\b",
+            r"\b(?:cannot|may\s+not)\s+(?:be\s+)?(?:limited|capped|excluded)\b.*\b(?:death|personal\s+injury)\b",
+        ]
+        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
