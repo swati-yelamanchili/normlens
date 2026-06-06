@@ -20,7 +20,7 @@ from app.models.risk import RiskFinding as RiskFindingModel
 from app.outlier import OutlierDetector
 from app.parsers import DOCXParser, PDFParser
 from app.reporting import ReportGenerator
-from app.risk import RiskEngine
+from app.risk import RiskEngine, detect_contract_type
 from app.segmentation import ClauseSegmenter
 
 logger = logging.getLogger(__name__)
@@ -174,6 +174,12 @@ def analyze_contract(
         contract.status = ContractStatus.ANALYZING
         db.commit()
 
+        # Detect contract type from full text
+        ct_result = detect_contract_type(contract.text_content or "")
+        contract_type = ct_result["contract_type"]
+        contract_type_confidence = ct_result["confidence"]
+        logger.info(f"Contract type detected: {contract_type} (confidence: {contract_type_confidence:.1%})")
+
         all_findings = []
         all_outliers = []
         all_benchmarks = []
@@ -229,9 +235,15 @@ def analyze_contract(
                 db.commit()
 
         missing_findings = _get_risk_engine().evaluate_missing_clauses(
-            classified_clauses, list(clause_types_found), full_text=contract.text_content or ""
+            classified_clauses,
+            list(clause_types_found),
+            full_text=contract.text_content or "",
+            contract_type=contract_type,
         )
         all_findings.extend(missing_findings)
+
+        # Deduplicate findings
+        all_findings = _get_risk_engine().deduplicate_findings(all_findings)
 
         for finding in all_findings:
             finding_model = RiskFindingModel(
@@ -243,6 +255,10 @@ def analyze_contract(
                 supporting_clause=finding.get("supporting_clause", "")[:1000],
                 extracted_value=finding.get("extracted_value", ""),
                 explanation=finding.get("explanation", "No explanation provided."),
+                finding_category=finding.get("finding_category"),
+                clause_group=finding.get("clause_group"),
+                supporting_clauses_json=finding.get("supporting_clauses"),
+                negotiation_recommendation=finding.get("negotiation_recommendation"),
             )
             db.add(finding_model)
         db.commit()
@@ -263,6 +279,8 @@ def analyze_contract(
             benchmarks=all_benchmarks,
             total_risk_score=total_score,
             risk_level=risk_level,
+            contract_type=contract_type,
+            contract_type_confidence=contract_type_confidence,
         )
 
         report_model = AnalysisReport(

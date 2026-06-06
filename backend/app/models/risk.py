@@ -42,4 +42,10 @@ class RiskFinding(Base):
     benchmark_comparison = Column(Text, nullable=True)
     percentile_rank = Column(Float, nullable=True)
     peer_group_reference = Column(String(256), nullable=True)
+    # New fields (nullable for backward compatibility)
+    finding_category = Column(String(64), nullable=True)
+    clause_group = Column(String(64), nullable=True)
+    supporting_clauses_json = Column(JSON, nullable=True)
+    negotiation_recommendation = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
