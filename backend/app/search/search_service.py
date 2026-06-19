@@ -42,6 +42,8 @@ class SearchService:
         query = query.strip()
         if not query:
             return []
+        if not clauses:
+            return []
 
         intent_clauses = self._detect_intent_filter(query)
         if intent_clauses:

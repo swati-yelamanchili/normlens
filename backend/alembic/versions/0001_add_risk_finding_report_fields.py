@@ -1,13 +1,13 @@
 """Add report fields to risk findings.
 
-Revision ID: 0001_add_risk_finding_report_fields
+Revision ID: 0001_risk_fields
 Revises:
 Create Date: 2026-06-19
 """
 
 from alembic import op
 
-revision = "0001_add_risk_finding_report_fields"
+revision = "0001_risk_fields"
 down_revision = None
 branch_labels = None
 depends_on = None
