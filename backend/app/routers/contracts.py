@@ -135,6 +135,15 @@ def delete_contract(
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
         raise HTTPException(status_code=404, detail="Contract not found")
+
+    # Clean up ChromaDB embeddings
+    try:
+        from app.embeddings.vector_store import get_vector_store
+        vs = get_vector_store()
+        vs.delete_by_contract(str(contract.id))
+    except Exception:
+        logger.warning("Could not clean up ChromaDB embeddings for contract %s", contract_id)
+
     file_path = os.path.join(settings.upload_dir, contract.filename)
     if os.path.exists(file_path):
         os.remove(file_path)

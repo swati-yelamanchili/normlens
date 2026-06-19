@@ -42,6 +42,6 @@ class TestRiskEngine:
 
     def test_risk_levels(self):
         assert self.engine.get_risk_level(10) == "Low"
-        assert self.engine.get_risk_level(30) == "Moderate"
-        assert self.engine.get_risk_level(60) == "High"
-        assert self.engine.get_risk_level(80) == "Critical"
+        assert self.engine.get_risk_level(31) == "Moderate"
+        assert self.engine.get_risk_level(71) == "High"
+        assert self.engine.get_risk_level(121) == "Critical"

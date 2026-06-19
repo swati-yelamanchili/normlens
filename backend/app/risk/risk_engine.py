@@ -255,33 +255,45 @@ class RiskEngine:
 
     def deduplicate_findings(self, findings: List[Dict]) -> List[Dict]:
         """
-        Merge duplicate findings with the same risk_name.
-        Keeps highest severity, merges supporting clauses into a list.
+        Merge duplicate findings with the same rule_id.
+        Keeps highest severity and max points, accumulates supporting clauses.
         """
         severity_order = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1}
         grouped: Dict[str, Dict] = {}
 
         for f in findings:
-            key = f["risk_name"]
+            key = f.get("rule_id") or f.get("risk_name", "unknown")
             if key not in grouped:
-                grouped[key] = {**f, "supporting_clauses": []}
+                grouped[key] = {
+                    **f,
+                    "supporting_clauses": [],
+                    "clause_ids": [],
+                }
                 sc = f.get("supporting_clause", "")
                 if sc and sc != "No matching clause found in contract":
                     grouped[key]["supporting_clauses"].append(sc)
+                cid = f.get("clause_id")
+                if cid:
+                    grouped[key]["clause_ids"].append(cid)
             else:
                 existing = grouped[key]
-                # Upgrade severity if this instance is higher
-                if severity_order.get(f["severity"], 0) > severity_order.get(existing["severity"], 0):
+                new_sev = severity_order.get(f["severity"], 0)
+                cur_sev = severity_order.get(existing["severity"], 0)
+                if new_sev > cur_sev:
                     existing["severity"] = f["severity"]
-                    existing["points"] = f["points"]
                     existing["explanation"] = f["explanation"]
-                # Accumulate points (cap at max single-rule points)
+                # Always keep max points across all duplicates
+                existing["points"] = max(existing["points"], f.get("points", 0))
+                # Collect unique supporting clauses
                 sc = f.get("supporting_clause", "")
                 if sc and sc != "No matching clause found in contract" and sc not in existing["supporting_clauses"]:
                     existing["supporting_clauses"].append(sc)
+                # Collect unique clause IDs
+                cid = f.get("clause_id")
+                if cid and cid not in existing["clause_ids"]:
+                    existing["clause_ids"].append(cid)
 
         result = list(grouped.values())
-        # Ensure supporting_clause (singular) is still present for backward compat
         for r in result:
             if not r.get("supporting_clause") and r.get("supporting_clauses"):
                 r["supporting_clause"] = r["supporting_clauses"][0]

@@ -5,6 +5,13 @@ import { Upload, FileText, BarChart3, Search, AlertTriangle, TrendingUp, Chevron
 import * as api from '@/lib/api'
 import type { Contract } from '@/types'
 
+const ANALYSIS_POLL_INTERVAL_MS = 1500
+const ANALYSIS_MAX_POLLS = 120
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 export default function Home() {
   const [contracts, setContracts] = useState<Contract[]>([])
   const [loading, setLoading] = useState(true)
@@ -53,12 +60,24 @@ export default function Home() {
     setError(null)
     try {
       await api.analyzeContract(id)
-      const status = await api.getAnalysisStatus(id)
-      if (status.status === 'analyzed') {
-        const r = await api.getReport(id)
-        setReport(r)
-        setSelectedContract(id)
+      for (let attempt = 0; attempt < ANALYSIS_MAX_POLLS; attempt += 1) {
+        const status = await api.getAnalysisStatus(id)
+        await loadContracts()
+
+        if (status.status === 'analyzed') {
+          const r = await api.getReport(id)
+          setReport(r)
+          setSelectedContract(id)
+          return
+        }
+
+        if (status.status === 'failed') {
+          throw new Error(status.error_message || 'Analysis failed')
+        }
+
+        await wait(ANALYSIS_POLL_INTERVAL_MS)
       }
+      throw new Error('Analysis is still running. Check the contract status again shortly.')
     } catch (e: any) {
       setError(e.message)
     } finally {

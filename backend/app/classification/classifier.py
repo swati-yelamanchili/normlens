@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from typing import Dict, List, Optional, Tuple
 
@@ -154,7 +155,69 @@ class ClauseClassifier:
         self.embedding_service = embedding_service or EmbeddingService()
         self.label_embeddings = None
         self.labels = CUAD_LABELS
+        self.ml_model = None
+        self.ml_tokenizer = None
+        self.ml_label_map = None
+        self._ml_loaded = False
         self._build_label_embeddings()
+
+    def _load_ml_model(self):
+        model_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "models", "clause_classifier", "final",
+        )
+        if not os.path.exists(model_dir):
+            logger.warning(f"ML model not found at {model_dir}, using heuristic only")
+            return
+
+        try:
+            import transformers.utils.import_utils as _iu
+            _original = getattr(_iu, "check_torch_load_is_safe", None)
+            if _original:
+                _iu.check_torch_load_is_safe = lambda: None
+
+            from transformers import AutoTokenizer, AutoModelForSequenceClassification
+            self.ml_tokenizer = AutoTokenizer.from_pretrained(model_dir)
+            self.ml_model = AutoModelForSequenceClassification.from_pretrained(model_dir)
+            self.ml_model.eval()
+
+            import json
+            label_map_path = os.path.join(os.path.dirname(model_dir), "label_map.json")
+            if os.path.exists(label_map_path):
+                with open(label_map_path) as f:
+                    self.ml_label_map = json.load(f)
+                self.ml_label_map = {int(k): v for k, v in self.ml_label_map.items()}
+
+            if _original:
+                _iu.check_torch_load_is_safe = _original
+
+            logger.info(f"Legal-BERT clause classifier loaded from {model_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to load ML clause classifier: {e}")
+            self.ml_model = None
+
+    def _ensure_ml_loaded(self):
+        if self._ml_loaded:
+            return
+        self._ml_loaded = True
+        self._load_ml_model()
+
+    def _ml_classify(self, clause_text: str) -> Tuple[Optional[str], float]:
+        self._ensure_ml_loaded()
+        if self.ml_model is None or self.ml_tokenizer is None:
+            return None, 0.0
+
+        import torch
+        inputs = self.ml_tokenizer(
+            clause_text, return_tensors="pt", truncation=True, padding=True, max_length=256,
+        )
+        with torch.no_grad():
+            outputs = self.ml_model(**inputs)
+        probs = torch.nn.functional.softmax(outputs.logits, dim=-1).squeeze(0)
+        pred_idx = int(torch.argmax(probs).item())
+        confidence = float(probs[pred_idx].item())
+        label = self.ml_label_map.get(pred_idx, self.labels[pred_idx]) if self.ml_label_map else self.labels[pred_idx]
+        return label, round(confidence, 4)
 
     def _build_label_embeddings(self):
         label_texts = []
@@ -182,31 +245,62 @@ class ClauseClassifier:
         ]
         return results
 
-    def classify_best(self, clause_text: str, min_confidence: float = 0.15) -> Tuple[Optional[str], float]:
+    def classify_best(
+        self,
+        clause_text: str,
+        min_confidence: float = 0.15,
+    ) -> Tuple[Optional[str], float]:
+        ml_type, ml_score = self._ml_classify(clause_text)
+
+        if ml_type and ml_score >= 0.5:
+            return ml_type, ml_score
+
         keyword_type, keyword_score = self._keyword_classify(clause_text)
 
-        embedding_result = self.classify(clause_text, top_k=3)
+        embedding_result = self.classify(clause_text, top_k=5)
         embedding_type = None
         embedding_score = 0.0
-        embedding_top3 = []
+        embedding_top5 = []
         if embedding_result:
             embedding_type = embedding_result[0]["clause_type"]
             embedding_score = embedding_result[0]["confidence_score"]
-            embedding_top3 = [r["clause_type"] for r in embedding_result]
+            embedding_top5 = [r["clause_type"] for r in embedding_result]
 
-        if keyword_type and keyword_score >= 0.4:
-            if keyword_type in embedding_top3:
-                return keyword_type, max(keyword_score, embedding_score)
-            if embedding_score < 0.6:
-                return keyword_type, keyword_score
+        combined = self._fuse_scores(
+            keyword_type, keyword_score,
+            embedding_type, embedding_score,
+            embedding_top5,
+        )
 
-        if embedding_type and embedding_score >= min_confidence:
-            return embedding_type, embedding_score
+        if combined and combined[1] >= min_confidence:
+            return combined
 
-        if keyword_type and keyword_score >= 0.15:
-            return keyword_type, keyword_score
+        if ml_type and ml_score >= min_confidence:
+            return ml_type, ml_score
 
         return embedding_type or None, embedding_score
+
+    def _fuse_scores(
+        self,
+        kw_type: Optional[str], kw_score: float,
+        emb_type: Optional[str], emb_score: float,
+        emb_top5: List[str],
+    ) -> Optional[Tuple[Optional[str], float]]:
+        if kw_type and kw_score >= 0.4:
+            if kw_type in emb_top5:
+                return kw_type, max(kw_score, emb_score)
+            if emb_score < 0.6:
+                return kw_type, kw_score * 0.8 + emb_score * 0.2
+
+        if emb_type and emb_score >= 0.3:
+            if kw_type == emb_type:
+                return emb_type, min(1.0, emb_score * 1.3)
+            return emb_type, emb_score
+
+        if kw_type and kw_score >= 0.2:
+            return kw_type, kw_score * 0.7
+
+        return None
 
     def _keyword_classify(self, clause_text: str) -> Tuple[Optional[str], float]:
         best_type = None

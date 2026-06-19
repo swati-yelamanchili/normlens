@@ -1,7 +1,8 @@
 import logging
 import hashlib
 import re
-from typing import List, Optional
+import uuid
+from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -89,3 +90,34 @@ class EmbeddingService:
         if norm == 0:
             return 0.0
         return float(dot / norm)
+
+    def store_in_vector_db(
+        self, texts: List[str], embeddings: np.ndarray, metadatas: List[Dict]
+    ) -> List[str]:
+        embedding_ids = []
+        try:
+            from app.embeddings.vector_store import get_vector_store
+
+            vs = get_vector_store()
+            emb_list = embeddings.tolist() if hasattr(embeddings, "tolist") else embeddings
+            embedding_ids = [str(uuid.uuid4()) for _ in texts]
+            vs.add_embeddings(
+                embedding_ids=embedding_ids,
+                embeddings=emb_list,
+                metadatas=metadatas,
+                documents=texts,
+            )
+        except Exception as e:
+            logger.warning("Failed to store embeddings in vector DB: %s", e)
+        return embedding_ids
+
+    def delete_from_vector_db(self, embedding_ids: List[str]):
+        if not embedding_ids:
+            return
+        try:
+            from app.embeddings.vector_store import get_vector_store
+
+            vs = get_vector_store()
+            vs.delete_embeddings(embedding_ids)
+        except Exception as e:
+            logger.warning("Failed to delete embeddings from vector DB: %s", e)

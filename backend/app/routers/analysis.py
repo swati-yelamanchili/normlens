@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 import uuid
 from typing import List
 
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.benchmarking import BenchmarkingEngine
 from app.classification import ClauseClassifier
 from app.config import settings
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.embeddings import EmbeddingService
 from app.extraction import AttributeExtractor
 from app.models.benchmark import BenchmarkResult
@@ -22,6 +23,7 @@ from app.parsers import DOCXParser, PDFParser
 from app.reporting import ReportGenerator
 from app.risk import RiskEngine, detect_contract_type
 from app.segmentation import ClauseSegmenter
+from app.services.task_manager import get_task_manager, TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +45,13 @@ def _get_embedding_service():
         _embedding_service = EmbeddingService()
     return _embedding_service
 
+
 def _get_classifier():
     global _classifier
     if _classifier is None:
         _classifier = ClauseClassifier(_get_embedding_service())
     return _classifier
+
 
 def _get_extractor():
     global _extractor
@@ -55,11 +59,13 @@ def _get_extractor():
         _extractor = AttributeExtractor(_get_embedding_service())
     return _extractor
 
+
 def _get_segmenter():
     global _segmenter
     if _segmenter is None:
         _segmenter = ClauseSegmenter()
     return _segmenter
+
 
 def _get_risk_engine():
     global _risk_engine
@@ -67,23 +73,32 @@ def _get_risk_engine():
         _risk_engine = RiskEngine()
     return _risk_engine
 
+
 def _get_benchmarking():
     global _benchmarking
     if _benchmarking is None:
         _benchmarking = BenchmarkingEngine(_get_embedding_service(), _get_classifier())
     return _benchmarking
 
+
 def _get_outlier_detector():
     global _outlier_detector
     if _outlier_detector is None:
-        _outlier_detector = OutlierDetector(_get_embedding_service(), _get_classifier(), _get_benchmarking())
+        _outlier_detector = OutlierDetector(
+            _get_embedding_service(), _get_classifier(), _get_benchmarking()
+        )
     return _outlier_detector
+
 
 def _get_report_generator():
     global _report_generator
     if _report_generator is None:
         _report_generator = ReportGenerator()
     return _report_generator
+
+
+_analysis_locks: set = set()
+_analysis_lock = threading.Lock()
 
 
 @router.post("/analyze/{contract_id}")
@@ -95,15 +110,67 @@ def analyze_contract(
     if not contract:
         raise HTTPException(status_code=404, detail="Contract not found")
 
+    str_cid = str(contract_id)
+    with _analysis_lock:
+        if str_cid in _analysis_locks:
+            raise HTTPException(
+                status_code=409,
+                detail="Analysis already in progress for this contract",
+            )
+        _analysis_locks.add(str_cid)
+
     file_path = os.path.join(settings.upload_dir, contract.filename)
     if not os.path.exists(file_path):
+        with _analysis_lock:
+            _analysis_locks.discard(str_cid)
         raise HTTPException(status_code=400, detail="Contract file not found on disk")
 
+    task_manager = get_task_manager()
+    task_id = task_manager.create_task("analysis")
+
+    task_manager.start_task(
+        task_id,
+        _run_analysis_wrapper,
+        args=(contract_id, str_cid),
+    )
+
+    return {
+        "task_id": task_id,
+        "contract_id": str(contract.id),
+        "status": "started",
+        "message": "Analysis started in background",
+    }
+
+
+def _run_analysis_wrapper(contract_id: uuid.UUID, str_cid: str):
     try:
-        db.query(BenchmarkResult).filter(BenchmarkResult.contract_id == contract.id).delete()
-        db.query(RiskFindingModel).filter(RiskFindingModel.contract_id == contract.id).delete()
-        db.query(AnalysisReport).filter(AnalysisReport.contract_id == contract.id).delete()
-        db.query(ClauseModel).filter(ClauseModel.contract_id == contract.id).delete()
+        _run_analysis(contract_id)
+    finally:
+        with _analysis_lock:
+            _analysis_locks.discard(str_cid)
+
+
+def _run_analysis(contract_id: uuid.UUID):
+    db = SessionLocal()
+    try:
+        contract = db.query(Contract).filter(Contract.id == contract_id).first()
+        if not contract:
+            raise ValueError("Contract not found")
+
+        file_path = os.path.join(settings.upload_dir, contract.filename)
+
+        db.query(BenchmarkResult).filter(
+            BenchmarkResult.contract_id == contract.id
+        ).delete()
+        db.query(RiskFindingModel).filter(
+            RiskFindingModel.contract_id == contract.id
+        ).delete()
+        db.query(AnalysisReport).filter(
+            AnalysisReport.contract_id == contract.id
+        ).delete()
+        db.query(ClauseModel).filter(
+            ClauseModel.contract_id == contract.id
+        ).delete()
         db.commit()
 
         contract.status = ContractStatus.PARSING
@@ -151,22 +218,48 @@ def analyze_contract(
         db.commit()
 
         classified_clauses = []
+        embed_texts = []
+        embed_metadatas = []
+
         for clause_model in clause_models:
-            clause_type, confidence = _get_classifier().classify_best(clause_model.clause_text)
+            clause_text = clause_model.clause_text
+            clause_index = clause_model.clause_index
+            clause_title = clause_model.clause_title
+            page_number = clause_model.page_number
+
+            clause_type, confidence = _get_classifier().classify_best(clause_text)
             clause_model.clause_type = clause_type
             clause_model.classification_confidence = confidence
-            db.commit()
+            db.flush()
 
-            classified_clauses.append(
+            classified_clauses.append({
+                "clause_index": clause_index,
+                "clause_title": clause_title,
+                "clause_text": clause_text,
+                "page_number": page_number,
+                "clause_type": clause_type,
+                "classification_confidence": confidence,
+            })
+            embed_texts.append(clause_text)
+            embed_metadatas.append(
                 {
-                    "clause_index": clause_model.clause_index,
-                    "clause_title": clause_model.clause_title,
-                    "clause_text": clause_model.clause_text,
-                    "page_number": clause_model.page_number,
-                    "clause_type": clause_type,
-                    "classification_confidence": confidence,
+                    "contract_id": str(contract.id),
+                    "clause_index": str(clause_index),
+                    "clause_type": clause_type or "unclassified",
                 }
             )
+
+        contract.status = ContractStatus.EMBEDDING
+        db.commit()
+
+        if embed_texts:
+            embeddings = _get_embedding_service().encode(embed_texts)
+            embedding_ids = _get_embedding_service().store_in_vector_db(
+                embed_texts, embeddings, embed_metadatas
+            )
+            for clause_model, emb_id in zip(clause_models, embedding_ids):
+                clause_model.embedding_id = emb_id
+            db.commit()
 
         contract.status = ContractStatus.CLASSIFIED
         db.commit()
@@ -174,11 +267,12 @@ def analyze_contract(
         contract.status = ContractStatus.ANALYZING
         db.commit()
 
-        # Detect contract type from full text
         ct_result = detect_contract_type(contract.text_content or "")
         contract_type = ct_result["contract_type"]
         contract_type_confidence = ct_result["confidence"]
-        logger.info(f"Contract type detected: {contract_type} (confidence: {contract_type_confidence:.1%})")
+        logger.info(
+            f"Contract type detected: {contract_type} (confidence: {contract_type_confidence:.1%})"
+        )
 
         all_findings = []
         all_outliers = []
@@ -188,7 +282,9 @@ def analyze_contract(
         for clause_data in classified_clauses:
             clause_index = clause_data["clause_index"]
             current_cm = clause_by_index.get(clause_index)
-            attr = _get_extractor().extract(clause_data["clause_text"], clause_data["clause_type"])
+            attr = _get_extractor().extract(
+                clause_data["clause_text"], clause_data["clause_type"]
+            )
             clause_data["attributes"] = attr
 
             clause_type = clause_data.get("clause_type")
@@ -201,7 +297,9 @@ def analyze_contract(
             all_findings.extend(findings)
 
             if clause_type:
-                outliers = _get_outlier_detector().detect_outliers(clause_data, attr, clause_type)
+                outliers = _get_outlier_detector().detect_outliers(
+                    clause_data, attr, clause_type
+                )
                 all_outliers.extend(outliers)
 
                 benchmarks = _get_benchmarking().benchmark_attributes(
@@ -242,7 +340,6 @@ def analyze_contract(
         )
         all_findings.extend(missing_findings)
 
-        # Deduplicate findings
         all_findings = _get_risk_engine().deduplicate_findings(all_findings)
 
         for finding in all_findings:
@@ -258,7 +355,9 @@ def analyze_contract(
                 finding_category=finding.get("finding_category"),
                 clause_group=finding.get("clause_group"),
                 supporting_clauses_json=finding.get("supporting_clauses"),
-                negotiation_recommendation=finding.get("negotiation_recommendation"),
+                negotiation_recommendation=finding.get(
+                    "negotiation_recommendation"
+                ),
             )
             db.add(finding_model)
         db.commit()
@@ -311,10 +410,18 @@ def analyze_contract(
     except Exception as e:
         logger.exception(f"Analysis failed for contract {contract_id}")
         db.rollback()
-        contract.status = ContractStatus.FAILED
-        contract.error_message = str(e)[:500]
-        db.commit()
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        try:
+            contract = db.query(Contract).filter(Contract.id == contract_id).first()
+            if contract:
+                contract.status = ContractStatus.FAILED
+                contract.error_message = str(e)[:500]
+                db.commit()
+        except Exception:
+            pass
+        raise
+
+    finally:
+        db.close()
 
 
 @router.get("/status/{contract_id}")

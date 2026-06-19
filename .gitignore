@@ -39,9 +39,13 @@ data/uploads/
 
 # ML Models
 *.bin
+*.joblib
+*.pkl
 *.pt
 *.pth
+*.safetensors
 *.onnx
+backend/models/
 
 # Logs
 *.log

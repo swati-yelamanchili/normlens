@@ -53,18 +53,24 @@ class BenchmarkingEngine:
             std_val = float(np.std(peer_values)) if len(peer_values) > 1 else 1.0
             z_score = (numeric_value - mean_val) / std_val if std_val > 0 else 0.0
 
+            def _r(v):
+                r = float(v)
+                if r == int(r):
+                    return int(r)
+                return round(r, 2)
+
             benchmark_result = {
                 "clause_type": clause_type,
                 "attribute": attr_key,
                 "contract_value": str(attr_value),
                 "numeric_value": numeric_value,
-                "market_median": float(np.median(peer_values)),
-                "market_mean": mean_val,
-                "market_std": std_val,
-                "market_p5": float(np.percentile(peer_values, 5)),
-                "market_p25": float(np.percentile(peer_values, 25)),
-                "market_p75": float(np.percentile(peer_values, 75)),
-                "market_p95": float(np.percentile(peer_values, 95)),
+                "market_median": _r(float(np.median(peer_values))),
+                "market_mean": _r(mean_val),
+                "market_std": _r(std_val),
+                "market_p5": _r(float(np.percentile(peer_values, 5))),
+                "market_p25": _r(float(np.percentile(peer_values, 25))),
+                "market_p75": _r(float(np.percentile(peer_values, 75))),
+                "market_p95": _r(float(np.percentile(peer_values, 95))),
                 "percentile_rank": round(float(percentile), 1),
                 "z_score": round(float(z_score), 2),
                 "peer_count": len(peer_values),

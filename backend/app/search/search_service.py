@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -35,8 +35,13 @@ class SearchService:
         self.embedding_service = embedding_service
         self.classifier = classifier
 
-    def search(self, query: str, clauses: List[dict], top_k: int = 5) -> List[Dict]:
+    def search(
+        self, query: str, clauses: List[dict], top_k: int = 5,
+        contract_id: Optional[str] = None,
+    ) -> List[Dict]:
         query = query.strip()
+        if not query:
+            return []
 
         intent_clauses = self._detect_intent_filter(query)
         if intent_clauses:
@@ -53,6 +58,48 @@ class SearchService:
         if exact_results:
             return exact_results[:top_k]
 
+        # Try ChromaDB semantic search first
+        chroma_results = self._chroma_search(query, top_k, contract_id)
+        if chroma_results:
+            return chroma_results
+
+        # Fallback to in-memory embedding search
+        return self._fallback_embedding_search(query, clauses, top_k)
+
+    def _chroma_search(
+        self, query: str, top_k: int, contract_id: Optional[str] = None,
+    ) -> Optional[List[Dict]]:
+        try:
+            from app.embeddings.vector_store import get_vector_store
+
+            vs = get_vector_store()
+            if vs.count() == 0:
+                return None
+
+            query_emb = self.embedding_service.encode_single(query)
+            where = {"contract_id": contract_id} if contract_id else None
+            results = vs.search(
+                query_embedding=query_emb.tolist(),
+                top_k=top_k,
+                where=where,
+            )
+            if not results:
+                return None
+
+            return [
+                {
+                    "clause_index": int(r["metadata"].get("clause_index", 0)),
+                    "clause_type": r["metadata"].get("clause_type", ""),
+                    "clause_text": (r.get("document") or "")[:500],
+                    "relevance_score": round(1.0 - r["score"], 4),
+                }
+                for r in results
+            ]
+        except Exception as e:
+            logger.debug("ChromaDB search failed, falling back: %s", e)
+            return None
+
+    def _fallback_embedding_search(self, query: str, clauses: List[dict], top_k: int) -> List[Dict]:
         query_emb = self.embedding_service.encode_single(query)
         results = []
 
@@ -92,14 +139,16 @@ class SearchService:
             text_lower = clause.get("clause_text", "").lower()
             title_lower = (clause.get("clause_title") or "").lower()
             clause_type_lower = (clause.get("clause_type") or "").lower()
+            combined = f"{text_lower} {title_lower} {clause_type_lower}"
 
             query_terms = query_lower.split()
 
-            if all(term in text_lower for term in query_terms) or any(
-                term in text_lower for term in query_terms
-            ):
-                match_count = sum(1 for t in query_terms if t in text_lower)
+            if any(term in combined for term in query_terms):
+                match_count = sum(1 for t in query_terms if t in combined)
                 relevance = match_count / max(len(query_terms), 1)
+                # Boost if all terms found
+                if all(term in combined for term in query_terms):
+                    relevance = max(relevance, 0.9)
 
                 results.append(
                     {

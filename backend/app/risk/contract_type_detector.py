@@ -1,12 +1,15 @@
 """
 Contract Type Detector
-Detects the type of contract from full text using keyword scoring.
-No ML dependency — uses regex patterns with weighted scoring.
+Detects the type of contract from full text using keyword scoring + ML model.
 """
 
+import json
+import logging
+import os
 import re
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
+logger = logging.getLogger(__name__)
 
 # Each entry: (pattern, weight)
 CONTRACT_TYPE_SIGNALS: Dict[str, list] = {
@@ -112,7 +115,6 @@ CONTRACT_TYPE_SIGNALS: Dict[str, list] = {
     ],
 }
 
-# Required clauses per contract type (for context-aware missing clause analysis)
 CONTRACT_TYPE_REQUIRED_CLAUSES: Dict[str, Dict[str, Tuple[str, int]]] = {
     "SaaS": {
         "Confidentiality":      ("High", 25),
@@ -196,19 +198,67 @@ CONTRACT_TYPE_REQUIRED_CLAUSES: Dict[str, Dict[str, Tuple[str, int]]] = {
     },
 }
 
+_ml_vectorizer = None
+_ml_model = None
+_ml_type_map = None
+
+
+def _load_ml_model():
+    global _ml_vectorizer, _ml_model, _ml_type_map
+    if _ml_vectorizer is not None:
+        return
+
+    model_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "models", "contract_type",
+    )
+    if not os.path.exists(model_dir):
+        logger.warning(f"ML contract type model not found at {model_dir}")
+        return
+
+    try:
+        import joblib
+        vec_path = os.path.join(model_dir, "vectorizer.pkl")
+        model_path = os.path.join(model_dir, "contract_type_model.pkl")
+        type_map_path = os.path.join(model_dir, "contract_types.json")
+
+        if os.path.exists(vec_path) and os.path.exists(model_path):
+            _ml_vectorizer = joblib.load(vec_path)
+            _ml_model = joblib.load(model_path)
+
+            if os.path.exists(type_map_path):
+                with open(type_map_path) as f:
+                    _ml_type_map = json.load(f)
+                _ml_type_map = {int(k): v for k, v in _ml_type_map.items()}
+
+            logger.info(f"ML contract type model loaded from {model_dir}")
+    except Exception as e:
+        logger.warning(f"Failed to load ML contract type model: {e}")
+        _ml_vectorizer = None
+        _ml_model = None
+
+
+def _ml_predict(full_text: str) -> Tuple[Optional[str], float]:
+    global _ml_vectorizer, _ml_model, _ml_type_map
+    if _ml_vectorizer is None or _ml_model is None:
+        return None, 0.0
+
+    try:
+        text_lower = full_text.lower()
+        keys = list(_ml_type_map.values()) if _ml_type_map else []
+        X = _ml_vectorizer.transform([text_lower])
+        pred = _ml_model.predict(X)[0]
+        proba = _ml_model.predict_proba(X)[0]
+        top_idx = int(pred)
+        confidence = float(max(proba))
+        label = _ml_type_map.get(top_idx, f"unknown_{top_idx}") if _ml_type_map else str(top_idx)
+        return label, round(confidence, 3)
+    except Exception as e:
+        logger.warning(f"ML contract type prediction failed: {e}")
+        return None, 0.0
+
 
 def detect_contract_type(full_text: str) -> dict:
-    """
-    Detect the contract type from full text using keyword scoring.
-
-    Returns:
-        {
-            "contract_type": str,
-            "confidence": float,   # 0.0–1.0
-            "scores": dict,        # raw scores per type
-            "rationale": str,
-        }
-    """
     text_lower = full_text.lower()
     scores: Dict[str, float] = {}
 
@@ -216,54 +266,59 @@ def detect_contract_type(full_text: str) -> dict:
         total = 0.0
         for pattern, weight in signals:
             matches = re.findall(pattern, text_lower, re.IGNORECASE)
-            # Cap each signal at 3 hits to avoid single-word domination
             total += min(len(matches), 3) * weight
         scores[contract_type] = total
 
     if not scores or max(scores.values()) == 0:
-        return {
+        kw_result = {
             "contract_type": "General Commercial Agreement",
             "confidence": 0.0,
             "scores": scores,
             "rationale": "No contract-type signals detected.",
         }
+    else:
+        best_type = max(scores, key=lambda k: scores[k])
+        best_score = scores[best_type]
+        total_score = sum(scores.values())
+        confidence = round(best_score / total_score, 3) if total_score > 0 else 0.0
 
-    best_type = max(scores, key=lambda k: scores[k])
-    best_score = scores[best_type]
-    total_score = sum(scores.values())
+        sorted_types = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        second_score = sorted_types[1][1] if len(sorted_types) > 1 else 0
 
-    # Confidence = winner's share of total signal weight
-    confidence = round(best_score / total_score, 3) if total_score > 0 else 0.0
+        if best_score < 10:
+            kw_result = {
+                "contract_type": "General Commercial Agreement",
+                "confidence": confidence,
+                "scores": scores,
+                "rationale": f"Weak signals detected (best: {best_type} = {best_score:.0f} pts). Defaulting to General Commercial Agreement.",
+            }
+        else:
+            rationale = f"Detected as {best_type} (score: {best_score:.0f}, confidence: {confidence:.0%})"
+            if second_score > 0:
+                rationale += f". Runner-up: {sorted_types[1][0]} (score: {second_score:.0f})."
+            kw_result = {
+                "contract_type": best_type,
+                "confidence": confidence,
+                "scores": {k: round(v, 1) for k, v in scores.items()},
+                "rationale": rationale,
+            }
 
-    # If best score is too low or close to second best, fall back to general
-    sorted_types = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    second_score = sorted_types[1][1] if len(sorted_types) > 1 else 0
+    _load_ml_model()
+    ml_type, ml_confidence = _ml_predict(full_text)
 
-    if best_score < 10:
-        return {
-            "contract_type": "General Commercial Agreement",
-            "confidence": confidence,
-            "scores": scores,
-            "rationale": f"Weak signals detected (best: {best_type} = {best_score:.0f} pts). Defaulting to General Commercial Agreement.",
-        }
+    if ml_type and ml_confidence > 0.5:
+        kw_confidence = kw_result.get("confidence", 0)
+        combined_conf = max(kw_confidence, ml_confidence)
+        kw_result["contract_type"] = ml_type
+        kw_result["confidence"] = round(combined_conf, 3)
+        kw_result["rationale"] += f" | ML model confirms: {ml_type} ({ml_confidence:.0%})"
+        kw_result["ml_prediction"] = ml_type
+        kw_result["ml_confidence"] = ml_confidence
 
-    rationale = f"Detected as {best_type} (score: {best_score:.0f}, confidence: {confidence:.0%})"
-    if second_score > 0:
-        rationale += f". Runner-up: {sorted_types[1][0]} (score: {second_score:.0f})."
-
-    return {
-        "contract_type": best_type,
-        "confidence": confidence,
-        "scores": {k: round(v, 1) for k, v in scores.items()},
-        "rationale": rationale,
-    }
+    return kw_result
 
 
 def get_required_clauses_for_type(contract_type: str) -> Dict[str, Tuple[str, int]]:
-    """
-    Return the required clauses and their context-adjusted severity/points
-    for the given contract type.
-    """
     return CONTRACT_TYPE_REQUIRED_CLAUSES.get(
         contract_type,
         CONTRACT_TYPE_REQUIRED_CLAUSES["General Commercial Agreement"],

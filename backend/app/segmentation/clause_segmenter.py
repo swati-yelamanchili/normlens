@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import List
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,22 @@ MARKER_SEPARATORS = [
 
 
 class ClauseSegmenter:
+    def __init__(self, use_spacy: bool = True):
+        self._nlp = None
+        self._use_spacy = use_spacy
+
+    def _get_spacy_sentences(self, text: str) -> Optional[List[str]]:
+        if not self._use_spacy:
+            return None
+        try:
+            from app.services.nlp_service import get_nlp_service
+            nlp = get_nlp_service()
+            if nlp.available:
+                return nlp.get_sentences(text)
+        except Exception as e:
+            logger.debug("spaCy sentence segmentation unavailable: %s", e)
+        return None
+
     def segment(self, text: str, pages: list = None) -> List[dict]:
         lines = text.split("\n")
         clauses = []
@@ -119,6 +135,9 @@ class ClauseSegmenter:
         return clauses
 
     def _fallback_segment(self, text: str) -> List[dict]:
+        sentences = self._get_spacy_sentences(text)
+        if sentences:
+            return self._build_from_sentences(sentences)
         blocks = re.split(r"\n{2,}", text)
         clauses = []
         for i, block in enumerate(blocks):
@@ -133,6 +152,39 @@ class ClauseSegmenter:
                     "page_number": 1,
                 }
             )
+        return clauses
+
+    def _build_from_sentences(self, sentences: List[str]) -> List[dict]:
+        clauses = []
+        current_group = []
+        for sent in sentences:
+            is_header = any(
+                re.match(p, sent) for p in CLAUSE_HEADER_PATTERNS
+            )
+            if is_header and current_group:
+                text = " ".join(current_group)
+                if len(text) > 20:
+                    clauses.append(
+                        {
+                            "clause_index": len(clauses),
+                            "clause_title": None,
+                            "clause_text": text,
+                            "page_number": 1,
+                        }
+                    )
+                current_group = []
+            current_group.append(sent)
+        if current_group:
+            text = " ".join(current_group)
+            if len(text) > 20:
+                clauses.append(
+                    {
+                        "clause_index": len(clauses),
+                        "clause_title": None,
+                        "clause_text": text,
+                        "page_number": 1,
+                    }
+                )
         return clauses
 
     def _estimate_page(self, line_index: int, total_lines: int, pages: list) -> int:

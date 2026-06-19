@@ -53,20 +53,4 @@ app = create_app()
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
-    
-    # Auto-migrate missing columns for risk_findings table
-    from sqlalchemy import text
-    with engine.begin() as conn:
-        for col, col_type in [
-            ("finding_category", "VARCHAR"),
-            ("clause_group", "VARCHAR"),
-            ("supporting_clauses_json", "VARCHAR"),
-            ("negotiation_recommendation", "VARCHAR")
-        ]:
-            try:
-                conn.execute(text(f'ALTER TABLE risk_findings ADD COLUMN IF NOT EXISTS {col} {col_type}'))
-                logger.info(f"Verified/added column {col}")
-            except Exception as e:
-                logger.warning(f"Could not check/add column {col}: {e}")
-                
     logger.info("Database tables created / verified")

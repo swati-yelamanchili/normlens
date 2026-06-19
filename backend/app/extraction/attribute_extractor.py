@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from typing import Dict, List, Optional
 
@@ -330,6 +331,9 @@ class AttributeExtractor:
 
         if self._type_matches(clause_type, EXTRACTION_GATES["lol_carveout_death_injury"]):
             attributes["lol_carveout_death_injury"] = self._detect_lol_carveout_death_injury(clause_text)
+
+        # spaCy NER enrichment for money values, dates, and law references
+        self._enrich_with_ner(clause_text, clause_type, attributes)
 
         return attributes
 
@@ -973,4 +977,106 @@ class AttributeExtractor:
             r"\b(?:cannot|may\s+not)\s+(?:be\s+)?(?:limited|capped|excluded)\b.*\b(?:death|personal\s+injury)\b",
         ]
         return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+    def _enrich_with_ner(self, text: str, clause_type: Optional[str], attributes: Dict):
+        try:
+            from app.services.nlp_service import get_nlp_service
+            nlp = get_nlp_service()
+            if nlp and nlp.available:
+                if clause_type in ("Governing Law", "Dispute Resolution", "Arbitration"):
+                    law_refs = nlp.extract_law_references(text)
+                    if law_refs and "governing_law" not in attributes:
+                        attributes["governing_law"] = law_refs[0]
+                    orgs = nlp.extract_org_names(text)
+                    if orgs and "governing_law" not in attributes:
+                        attributes["governing_law"] = orgs[0]
+                if clause_type in ("Insurance", "Liability", "Indemnification", "Limitation of Liability"):
+                    money_vals = nlp.extract_money_values(text)
+                    if money_vals and "liability_cap" not in attributes and "insurance_amount" not in attributes:
+                        if clause_type == "Insurance":
+                            attributes["insurance_amount"] = money_vals[0]
+                        else:
+                            attributes["liability_cap"] = money_vals[0]
+                if clause_type in ("Termination", "Confidentiality"):
+                    dates = nlp.extract_date_references(text)
+                    if dates and "notice_days" not in attributes:
+                        import re as _re
+                        for d in dates:
+                            nums = _re.findall(r'\d+', d)
+                            if nums:
+                                attributes["notice_days"] = int(nums[0])
+                                break
+        except Exception as e:
+            logger.debug("spaCy NER enrichment failed: %s", e)
+
+        self._enrich_with_trained_ner(text, clause_type, attributes)
+
+    _trained_ner_model = None
+
+    def _enrich_with_trained_ner(self, text: str, clause_type: Optional[str], attributes: Dict):
+        if AttributeExtractor._trained_ner_model is None:
+            model_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                "models", "attribute_ner",
+            )
+            if os.path.exists(model_dir):
+                try:
+                    import spacy
+                    AttributeExtractor._trained_ner_model = spacy.load(model_dir)
+                    logger.info(f"Trained NER model loaded from {model_dir}")
+                except Exception as e:
+                    logger.debug("Failed to load trained NER model: %s", e)
+                    AttributeExtractor._trained_ner_model = False
+
+        nlp = AttributeExtractor._trained_ner_model
+        if not nlp or not isinstance(nlp, object) or nlp is False:
+            return
+
+        try:
+            doc = nlp(text)
+            import re as _re
+
+            for ent in doc.ents:
+                if ent.label_ == "NOTICE_DAYS" and "notice_days" not in attributes:
+                    nums = _re.findall(r'\d+', ent.text)
+                    if nums:
+                        attributes["notice_days"] = int(nums[0])
+
+                if ent.label_ == "LIABILITY_AMOUNT" and "liability_cap" not in attributes and "insurance_amount" not in attributes:
+                    nums = _re.findall(r'[\d,]+(?:\.\d+)?', ent.text)
+                    if nums:
+                        val = int(nums[0].replace(",", ""))
+                        if clause_type == "Insurance":
+                            attributes["insurance_amount"] = val
+                        else:
+                            attributes["liability_cap"] = val
+
+                if ent.label_ == "PAYMENT_DEADLINE" and "payment_deadline_days" not in attributes:
+                    nums = _re.findall(r'\d+', ent.text)
+                    if nums:
+                        attributes["payment_deadline_days"] = int(nums[0])
+
+                if ent.label_ == "DURATION" and "non_compete_months" not in attributes:
+                    nums = _re.findall(r'\d+', ent.text)
+                    if nums:
+                        val = int(nums[0])
+                        if "month" in ent.text.lower():
+                            attributes["non_compete_months"] = val
+                        elif "year" in ent.text.lower() or "years" in ent.text.lower():
+                            attributes["non_compete_months"] = val * 12
+
+                if ent.label_ == "MONEY":
+                    nums = _re.findall(r'[\d,]+(?:\.\d+)?', ent.text)
+                    if nums:
+                        val = int(nums[0].replace(",", ""))
+                        if clause_type == "Insurance" and "insurance_amount" not in attributes:
+                            attributes["insurance_amount"] = val
+                        elif clause_type in ("Liability", "Limitation of Liability", "Indemnification") and "liability_cap" not in attributes:
+                            attributes["liability_cap"] = val
+
+                if ent.label_ == "LAW" and "governing_law" not in attributes:
+                    attributes["governing_law"] = ent.text
+
+        except Exception as e:
+            logger.debug("Trained NER enrichment failed: %s", e)
 

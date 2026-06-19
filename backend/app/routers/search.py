@@ -59,7 +59,8 @@ def search_clauses(
         for c in clause_models
     ]
 
-    results = _get_search_service().search(q, clauses, top_k=top_k)
+    str_contract_id = str(contract_id) if contract_id else None
+    results = _get_search_service().search(q, clauses, top_k=top_k, contract_id=str_contract_id)
 
     return {
         "query": q,
